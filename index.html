@@ -9,6 +9,12 @@
 
     <body>
       <div id="root"></div>
+    <script>
+      // Redirects used by public/firebase.js (no UI changes)
+      window.__AFTER_LOGIN_URL__ = "/dashboard";
+      window.__AFTER_SIGNUP_URL__ = "/dashboard";
+      window.__AFTER_LOGOUT_URL__ = "/";
+    </script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore-compat.js"></script>

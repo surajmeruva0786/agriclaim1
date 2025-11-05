@@ -92,9 +92,29 @@
 
         auth
           .signInWithEmailAndPassword(String(email).trim(), String(password))
-          .then(function () {
-            var url = (window && window.__AFTER_LOGIN_URL__) || "/";
-            window.location.href = url;
+          .then(function (cred) {
+            var user = cred.user;
+            // Ensure user is registered in Firestore and has Farmer role
+            return db
+              .collection("users")
+              .doc(user.uid)
+              .get()
+              .then(function (docSnap) {
+                if (!docSnap.exists) {
+                  // Not registered in app DB
+                  return auth.signOut().then(function () {
+                    console.error("Login blocked: user not registered in Firestore users collection");
+                  });
+                }
+                var data = docSnap.data() || {};
+                if (String(data.role || "") !== "Farmer") {
+                  return auth.signOut().then(function () {
+                    console.error("Login blocked: role is not Farmer");
+                  });
+                }
+                var url = (window && window.__AFTER_LOGIN_URL__) || "/dashboard";
+                window.location.href = url;
+              });
           })
           .catch(function (error) {
             console.error("Login error:", error);
@@ -119,10 +139,26 @@
       });
     }
 
-    // On-auth change (optional exposure)
+    // On-auth change (optional exposure + simple route guards)
     auth.onAuthStateChanged(function (user) {
       if (typeof window !== "undefined") {
         window.currentUser = user || null;
+        try {
+          var path = window.location.pathname || "/";
+          var protectedPaths = ["/dashboard", "/farmer-profile"]; // add more if needed
+          var loginPaths = ["/farmer-login", "/farmer-register", "/farmer-forgot-password"]; 
+
+          if (!user && protectedPaths.indexOf(path) !== -1) {
+            // Not logged in, push to login
+            window.location.replace("/farmer-login");
+          }
+          if (user && loginPaths.indexOf(path) !== -1) {
+            // Already logged in, push to dashboard
+            window.location.replace("/dashboard");
+          }
+        } catch (e) {
+          // no-op guard errors
+        }
       }
     });
 
