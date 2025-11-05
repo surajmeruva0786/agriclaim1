@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FileCheck, MapPin, DollarSign, Building2, Lock, User as UserIcon, Wheat, ArrowLeft } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -54,9 +54,10 @@ export default function OfficialLogin() {
     },
   ];
 
-  // Seed officials mapping on first load of this screen
-  // Safe to run multiple times; writes only if missing
-  import.meta.env && ensureSeedOfficials().catch(() => {});
+  // Seed officials mapping on first load
+  useEffect(() => {
+    ensureSeedOfficials().catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

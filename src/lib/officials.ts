@@ -28,6 +28,15 @@ export async function ensureSeedOfficials() {
 			const snap = await ref.get();
 			if (!snap.exists) {
 				await ref.set({ role: rec.role, displayName: rec.displayName || rec.username, password: rec.password, createdAt: new Date() }, { merge: true });
+			} else {
+				const data = snap.data() || {};
+				const update: any = {};
+				if (!data.password) update.password = rec.password;
+				if (!data.role) update.role = rec.role;
+				if (!data.displayName) update.displayName = rec.displayName || rec.username;
+				if (Object.keys(update).length) {
+					await ref.set(update, { merge: true });
+				}
 			}
 		})
 	);
