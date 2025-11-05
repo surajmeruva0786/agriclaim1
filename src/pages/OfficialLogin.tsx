@@ -74,6 +74,12 @@ export default function OfficialLogin() {
         return;
       }
       const email = usernameToEmail(username);
+      if (!official.password || official.password !== password) {
+        setIsLoading(false);
+        setErrorMessage('Incorrect username or password.');
+        setShowError(true);
+        return;
+      }
       // Try sign-in; if user not found, provision account
       let user;
       try {

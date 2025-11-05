@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MapPin, Camera, Upload, CheckCircle2, XCircle, FileText, ExternalLink, User, Phone, Mail, Home, CreditCard, Sprout, Eye, FileCheck } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import FloatingOrbs from '../components/FloatingOrbs';
@@ -17,8 +17,11 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
+import { getDb, serverTimestamp, arrayUnion } from '../lib/firebaseCompat';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function FieldOfficerDashboard() {
+  const { user } = useAuth();
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
   const [showInspectionModal, setShowInspectionModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -59,38 +62,45 @@ export default function FieldOfficerDashboard() {
     loginTime: 'Nov 4, 2025 09:30 AM',
   };
 
-  const [claims, setClaims] = useState<Claim[]>([
-    {
-      id: 'CL2024103',
-      farmerName: 'Mahesh Kumar',
-      farmerContact: '+91 98765 33333',
-      farmerEmail: 'mahesh.kumar@email.com',
-      farmerAddress: 'Village Dewas, Tehsil Dewas, District Dewas, Madhya Pradesh - 455001',
-      farmerAadhaar: '3456 7890 1234',
-      farmerBankAccount: 'ICICI Bank - 60300234567890',
-      cropType: 'Cotton',
-      cropVariety: 'Bt Cotton Hybrid',
-      areaAffected: 6.5,
-      cause: 'Pest Attack',
-      lossDate: '2024-08-05',
-      damagePercent: 45,
-      submittedDate: '2024-08-07',
-      status: 'forwarded',
-      description: 'Bollworm infestation damaged a significant portion of the cotton crop. Despite pesticide application, the pest attack was severe during flowering stage.',
-      documents: [
-        { name: 'Land Records.pdf', url: 'https://drive.google.com/file/land-mahesh', type: 'pdf' },
-        { name: 'Pest Damage Photos.jpg', url: 'https://drive.google.com/file/pest-damage', type: 'image' },
-        { name: 'Pesticide Bills.pdf', url: 'https://drive.google.com/file/pesticide-bills', type: 'pdf' },
-      ],
-      verifierRemarks: {
-        status: 'forwarded',
-        remarks: 'All documents verified. Land records and farmer identity confirmed. Forwarding to field officer for physical inspection.',
-        verifiedBy: 'Dr. Anjali Verma',
-        verifiedDate: '2024-08-08',
-        documentsVerified: true,
-      },
-    },
-  ]);
+  const [claims, setClaims] = useState<Claim[]>([]);
+
+  useEffect(() => {
+    const db = getDb();
+    const unsub = db
+      .collection('claims')
+      .where('stage', '==', 'field')
+      .onSnapshot((snap: any) => {
+        const list: any[] = [];
+        snap.forEach((d: any) => {
+          const data = d.data();
+          list.push({
+            id: d.id,
+            farmerName: data.farmerName || 'Farmer',
+            farmerContact: data.farmerContact || '',
+            farmerEmail: data.farmerEmail || '',
+            farmerAddress: data.farmerAddress || '',
+            farmerAadhaar: data.aadhar || '',
+            farmerBankAccount: data.bank || '',
+            cropType: data.cropType,
+            cropVariety: data.cropVariety || '',
+            areaAffected: data.areaAffected || 0,
+            cause: data.cause,
+            lossDate: data.lossDate,
+            damagePercent: data.damagePercent || 0,
+            submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
+            status: (data.status || 'Verified').toLowerCase(),
+            description: data.description || '',
+            documents: (data.documents || []).map((x: any) => ({ name: x.name || 'Link', url: x.url || data.imageLinks, type: x.type || 'link' })),
+            verifierRemarks: data.verifierRemarks,
+            location: data.location || '',
+            area: data.area || '',
+            claimedDamage: data.damagePercent || 0,
+          });
+        });
+        setClaims(list as any);
+      });
+    return () => unsub && unsub();
+  }, []);
 
   const stats = [
     { label: 'Pending Inspection', value: claims.filter(c => c.status === 'pending-inspection').length, icon: MapPin, color: 'from-orange-500 to-yellow-500' },
@@ -116,26 +126,45 @@ export default function FieldOfficerDashboard() {
     }
   };
 
-  const submitInspection = () => {
+  const submitInspection = async () => {
     if (!selectedClaim) return;
-    
-    setClaims(claims.map(c => 
-      c.id === selectedClaim.id ? { ...c, status: 'inspected' } : c
-    ));
-    
+    const db = getDb();
+    const claimRef = db.collection('claims').doc(selectedClaim.id);
+    await claimRef.update({
+      status: 'Field Verified',
+      stage: 'revenue',
+      updatedAt: serverTimestamp(),
+      latestRemark: 'Field inspection completed',
+      verifiedDamagePercent: verifiedDamage[0],
+      history: arrayUnion({
+        at: serverTimestamp(),
+        by: user?.uid || 'system',
+        action: 'Field Verified and Forwarded',
+        role: 'FieldOfficer',
+      }),
+    });
     toast.success('Inspection report submitted and forwarded to Revenue Officer');
     setShowInspectionModal(false);
     setSelectedClaim(null);
     setUploadedPhotos([]);
   };
 
-  const rejectClaim = () => {
+  const rejectClaim = async () => {
     if (!selectedClaim) return;
-    
-    setClaims(claims.map(c => 
-      c.id === selectedClaim.id ? { ...c, status: 'rejected' } : c
-    ));
-    
+    const db = getDb();
+    const claimRef = db.collection('claims').doc(selectedClaim.id);
+    await claimRef.update({
+      status: 'Rejected',
+      stage: 'rejected',
+      updatedAt: serverTimestamp(),
+      latestRemark: 'Rejected by Field Officer',
+      history: arrayUnion({
+        at: serverTimestamp(),
+        by: user?.uid || 'system',
+        action: 'Rejected',
+        role: 'FieldOfficer',
+      }),
+    });
     toast.success('Claim rejected');
     setShowInspectionModal(false);
     setSelectedClaim(null);
