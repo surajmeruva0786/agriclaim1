@@ -36,6 +36,38 @@
     }
 
     console.log("✅ Firebase Connected");
+    // Small helper to render inline error on current form
+    function showAuthError(message) {
+      try {
+        var active = document.activeElement;
+        var form = (active && (active.closest && active.closest('form'))) || document.querySelector('form');
+        if (!form) return console.error(message);
+        var existing = form.querySelector('#auth-error');
+        if (!existing) {
+          existing = document.createElement('div');
+          existing.id = 'auth-error';
+          existing.setAttribute('role', 'alert');
+          existing.style.marginTop = '8px';
+          existing.style.padding = '8px 10px';
+          existing.style.borderRadius = '6px';
+          existing.style.background = 'rgba(255, 0, 0, 0.08)';
+          existing.style.color = '#b00020';
+          existing.style.fontSize = '12px';
+          existing.style.border = '1px solid rgba(176,0,32,0.25)';
+          // Insert under email field if present, else at form top
+          var emailEl = form.querySelector('#email') || form.querySelector('input[type="email"]');
+          if (emailEl && emailEl.parentElement) {
+            emailEl.parentElement.insertAdjacentElement('afterend', existing);
+          } else {
+            form.insertAdjacentElement('afterbegin', existing);
+          }
+        }
+        existing.textContent = message;
+      } catch (e) {
+        console.error(message);
+      }
+    }
+
 
     // Session persistence (LOCAL)
     auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function (e) {
@@ -85,12 +117,13 @@
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
               })
               .then(function () {
-                var url = (window && window.__AFTER_SIGNUP_URL__) || "/dashboard";
+                var url = (window && window.__AFTER_SIGNUP_URL__) || "/";
                 window.location.href = url;
               });
           })
           .catch(function (error) {
             console.error("Signup error:", error);
+            showAuthError("Signup failed: " + (error && error.message ? error.message : "Unexpected error"));
           });
       }
       document.addEventListener("submit", onSubmitCapture, true);
@@ -132,12 +165,13 @@
                     console.error("Login blocked: role is not Farmer");
                   });
                 }
-                var url = (window && window.__AFTER_LOGIN_URL__) || "/dashboard";
+                var url = (window && window.__AFTER_LOGIN_URL__) || "/";
                 window.location.href = url;
               });
           })
           .catch(function (error) {
             console.error("Login error:", error);
+            showAuthError("Incorrect email or password. Please try again.");
           });
       }
       document.addEventListener("submit", onSubmitCapture, true);
@@ -182,7 +216,7 @@
               .then(function (docSnap) {
                 var role = (docSnap.exists && (docSnap.data() || {}).role) || null;
                 if (loginPaths.indexOf(path) !== -1 && role === "Farmer") {
-                  window.location.replace("/dashboard");
+                  window.location.replace((window && window.__AFTER_LOGIN_URL__) || "/");
                 }
                 if (protectedPaths.indexOf(path) !== -1 && role !== "Farmer") {
                   // logged in but not farmer → bounce to login
