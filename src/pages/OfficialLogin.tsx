@@ -12,6 +12,7 @@ import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
 import { getAuth, getDb } from '../lib/firebaseCompat';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { ensureSeedOfficials, getOfficialByUsername, usernameToEmail } from '../lib/officials';
 
 type Role = 'verifier' | 'field-officer' | 'revenue-officer' | 'treasury-officer';
 
@@ -53,21 +54,54 @@ export default function OfficialLogin() {
     },
   ];
 
+  // Seed officials mapping on first load of this screen
+  // Safe to run multiple times; writes only if missing
+  import.meta.env && ensureSeedOfficials().catch(() => {});
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const email = (document.getElementById('employeeId') as HTMLInputElement).value.trim();
+      const username = (document.getElementById('employeeId') as HTMLInputElement).value.trim();
       const password = (document.getElementById('password') as HTMLInputElement).value;
       const auth = getAuth();
       const db = getDb();
-      const cred = await auth.signInWithEmailAndPassword(email, password);
-      const user = cred.user;
-      const doc = await db.collection('users').doc(user.uid).get();
-      const data = doc.exists ? doc.data() : null;
-      const role = data?.role || '';
+      const official = await getOfficialByUsername(username);
+      if (!official) {
+        setIsLoading(false);
+        setErrorMessage('No such official user. Please check your username.');
+        setShowError(true);
+        return;
+      }
+      const email = usernameToEmail(username);
+      // Try sign-in; if user not found, provision account
+      let user;
+      try {
+        const cred = await auth.signInWithEmailAndPassword(email, password);
+        user = cred.user;
+      } catch (err: any) {
+        if (err && err.code === 'auth/user-not-found') {
+          const cred = await auth.createUserWithEmailAndPassword(email, password);
+          user = cred.user;
+          // Create users profile with role from officials mapping
+          await db.collection('users').doc(user.uid).set({
+            name: official.displayName || username,
+            email,
+            role: official.role,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }, { merge: true });
+        } else {
+          throw err;
+        }
+      }
+      // Ensure role matches selected portal (Admin can access all)
+      const userDoc = await db.collection('users').doc(user.uid).get();
+      const data = userDoc.exists ? userDoc.data() : null;
+      const role = (data?.role as string) || '';
       const selected = selectedRole === 'verifier' ? 'Verifier' : selectedRole === 'field-officer' ? 'FieldOfficer' : selectedRole === 'revenue-officer' ? 'RevenueOfficer' : selectedRole === 'treasury-officer' ? 'TreasuryOfficer' : '';
-      if (role !== selected) {
+      const allowed = role === 'Admin' || role === selected;
+      if (!allowed) {
         await auth.signOut();
         setIsLoading(false);
         setErrorMessage('Invalid credentials or role mismatch for selected portal.');
