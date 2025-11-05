@@ -42,51 +42,71 @@
       console.error("Persistence error:", e);
     });
 
-    // Wire up Farmer Signup form if present
+    // Wire up Farmer Signup (route-based, capture phase to block React handler)
     function wireFarmerSignup() {
-      var form = document.getElementById("farmer-signup-form") || document.getElementById("signup-form");
-      if (!form) return;
-      form.addEventListener("submit", function (ev) {
+      var path = (window && window.location && window.location.pathname) || "/";
+      if (path !== "/farmer-register") return;
+      function onSubmitCapture(ev) {
+        // Ensure it's a form submit
+        var target = ev.target;
+        if (!target || target.nodeName !== "FORM") return;
         ev.preventDefault();
-        var name = (document.getElementById("name") || {}).value || "";
-        var village = (document.getElementById("village") || {}).value || "";
+        if (typeof ev.stopImmediatePropagation === "function") ev.stopImmediatePropagation();
+        ev.stopPropagation();
+
+        var firstName = (document.getElementById("firstName") || {}).value || "";
+        var lastName = (document.getElementById("lastName") || {}).value || "";
         var phone = (document.getElementById("phone") || {}).value || "";
         var email = (document.getElementById("email") || {}).value || "";
         var password = (document.getElementById("password") || {}).value || "";
+        var address = (document.getElementById("address") || {}).value || "";
+        var aadhar = (document.getElementById("aadhar") || {}).value || "";
+        var landArea = (document.getElementById("landArea") || {}).value || "";
+        var landType = (document.getElementById("landType") || {}).value || "";
 
         auth
           .createUserWithEmailAndPassword(String(email).trim(), String(password))
           .then(function (userCredential) {
             var user = userCredential.user;
+            var name = (String(firstName).trim() + " " + String(lastName).trim()).trim();
             return db
               .collection("users")
               .doc(user.uid)
               .set({
-                name: String(name).trim(),
-                village: String(village).trim(),
+                name: name,
                 phone: String(phone).trim(),
+                address: String(address).trim(),
+                aadhar: String(aadhar).trim(),
+                landArea: String(landArea).trim(),
+                landType: String(landType).trim(),
                 role: "Farmer",
                 email: String(email).trim(),
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
               })
               .then(function () {
-                var url = (window && window.__AFTER_SIGNUP_URL__) || "/";
+                var url = (window && window.__AFTER_SIGNUP_URL__) || "/dashboard";
                 window.location.href = url;
               });
           })
           .catch(function (error) {
             console.error("Signup error:", error);
           });
-      });
+      }
+      document.addEventListener("submit", onSubmitCapture, true);
     }
 
     // Wire up Farmer Login form if present
     function wireFarmerLogin() {
-      var form = document.getElementById("farmer-login-form") || document.getElementById("login-form");
-      if (!form) return;
-      form.addEventListener("submit", function (ev) {
+      var path = (window && window.location && window.location.pathname) || "/";
+      if (path !== "/farmer-login") return;
+      function onSubmitCapture(ev) {
+        var target = ev.target;
+        if (!target || target.nodeName !== "FORM") return;
         ev.preventDefault();
+        if (typeof ev.stopImmediatePropagation === "function") ev.stopImmediatePropagation();
+        ev.stopPropagation();
+
         var email = (document.getElementById("email") || {}).value || "";
         var password = (document.getElementById("password") || {}).value || "";
 
@@ -119,7 +139,8 @@
           .catch(function (error) {
             console.error("Login error:", error);
           });
-      });
+      }
+      document.addEventListener("submit", onSubmitCapture, true);
     }
 
     // Wire up Logout button if present
@@ -139,7 +160,7 @@
       });
     }
 
-    // On-auth change (optional exposure + simple route guards)
+    // On-auth change (optional exposure + guarded redirects after role verification)
     auth.onAuthStateChanged(function (user) {
       if (typeof window !== "undefined") {
         window.currentUser = user || null;
@@ -149,12 +170,30 @@
           var loginPaths = ["/farmer-login", "/farmer-register", "/farmer-forgot-password"]; 
 
           if (!user && protectedPaths.indexOf(path) !== -1) {
-            // Not logged in, push to login
             window.location.replace("/farmer-login");
+            return;
           }
-          if (user && loginPaths.indexOf(path) !== -1) {
-            // Already logged in, push to dashboard
-            window.location.replace("/dashboard");
+
+          if (user) {
+            db
+              .collection("users")
+              .doc(user.uid)
+              .get()
+              .then(function (docSnap) {
+                var role = (docSnap.exists && (docSnap.data() || {}).role) || null;
+                if (loginPaths.indexOf(path) !== -1 && role === "Farmer") {
+                  window.location.replace("/dashboard");
+                }
+                if (protectedPaths.indexOf(path) !== -1 && role !== "Farmer") {
+                  // logged in but not farmer → bounce to login
+                  auth.signOut().finally(function () {
+                    window.location.replace("/farmer-login");
+                  });
+                }
+              })
+              .catch(function () {
+                // If user doc fetch fails, do not redirect to dashboard
+              });
           }
         } catch (e) {
           // no-op guard errors
