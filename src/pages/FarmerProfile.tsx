@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { User, Mail, Phone, MapPin, CreditCard, FileText, Lock, Edit2, Save, X, Landmark, Calendar, Check } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import FloatingOrbs from '../components/FloatingOrbs';
@@ -15,8 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
+import { useAuth } from '../contexts/AuthContext';
+import { getDb, serverTimestamp } from '../lib/firebaseCompat';
 
 export default function FarmerProfile() {
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([
@@ -39,39 +42,63 @@ export default function FarmerProfile() {
   ]);
 
   const [profileData, setProfileData] = useState({
-    name: 'Rajesh Kumar',
-    email: 'rajesh.kumar@example.com',
-    phone: '+91 98765 43210',
-    aadhar: '1234 5678 9012',
-    address: 'Village Rampur, District Bareilly, Uttar Pradesh - 243001',
-    village: 'Rampur',
-    district: 'Bareilly',
-    state: 'Uttar Pradesh',
-    pincode: '243001',
-    landArea: '5.5',
-    landType: 'Irrigated',
-    landSurveyNumber: 'SY-2024-RAM-556',
-    registrationDate: '15 Jan 2024',
-    bankName: 'State Bank of India',
-    accountNumber: '1234567890',
-    ifscCode: 'SBIN0001234',
-    accountHolderName: 'Rajesh Kumar',
+    name: '',
+    email: '',
+    phone: '',
+    aadhar: '',
+    address: '',
+    village: '',
+    district: '',
+    state: '',
+    pincode: '',
+    landArea: '',
+    landType: '',
+    landSurveyNumber: '',
+    registrationDate: '',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    accountHolderName: '',
   });
 
   const handleInputChange = (field: string, value: string) => {
     setProfileData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!user) return;
     setIsSaving(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const db = getDb();
+      await db.collection('users').doc(user.uid).set(
+        {
+          name: profileData.name,
+          email: profileData.email,
+          phone: profileData.phone,
+          aadhar: profileData.aadhar,
+          address: profileData.address,
+          village: profileData.village,
+          district: profileData.district,
+          state: profileData.state,
+          pincode: profileData.pincode,
+          landArea: profileData.landArea,
+          landType: profileData.landType,
+          landSurveyNumber: profileData.landSurveyNumber,
+          bankName: profileData.bankName,
+          accountNumber: profileData.accountNumber,
+          ifscCode: profileData.ifscCode,
+          accountHolderName: profileData.accountHolderName,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
       setIsSaving(false);
       setIsEditing(false);
-      toast.success('Profile updated successfully!', {
-        description: 'Your changes have been saved.',
-      });
-    }, 1500);
+      toast.success('Profile updated successfully!', { description: 'Your changes have been saved.' });
+    } catch (e) {
+      setIsSaving(false);
+      toast.error('Failed to save profile');
+    }
   };
 
   const handleCancel = () => {
@@ -81,6 +108,39 @@ export default function FarmerProfile() {
       description: 'Your profile was not updated.',
     });
   };
+
+  useEffect(() => {
+    if (!user) return;
+    const db = getDb();
+    db
+      .collection('users')
+      .doc(user.uid)
+      .get()
+      .then((doc: any) => {
+        const data = doc.exists ? doc.data() : {} as any;
+        setProfileData(prev => ({
+          ...prev,
+          name: (data.name || '').toString(),
+          email: (data.email || '').toString(),
+          phone: (data.phone || '').toString(),
+          aadhar: (data.aadhar || '').toString(),
+          address: (data.address || '').toString(),
+          village: (data.village || '').toString(),
+          district: (data.district || '').toString(),
+          state: (data.state || '').toString(),
+          pincode: (data.pincode || '').toString(),
+          landArea: (data.landArea || '').toString(),
+          landType: (data.landType || '').toString(),
+          landSurveyNumber: (data.landSurveyNumber || '').toString(),
+          registrationDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toDateString() : '',
+          bankName: (data.bankName || '').toString(),
+          accountNumber: (data.accountNumber || '').toString(),
+          ifscCode: (data.ifscCode || '').toString(),
+          accountHolderName: (data.accountHolderName || '').toString(),
+        }));
+      })
+      .catch(() => {});
+  }, [user]);
 
   return (
     <PageTransition>
