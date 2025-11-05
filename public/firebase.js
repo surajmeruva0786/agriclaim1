@@ -201,17 +201,145 @@
       }
     });
 
-    // Attach listeners on DOM ready
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", function () {
-        wireFarmerSignup();
-        wireFarmerLogin();
-        wireLogout();
-      });
-    } else {
+    function wireAll() {
       wireFarmerSignup();
       wireFarmerLogin();
+      wireGenericAuthCapture();
       wireLogout();
+    }
+
+    // Attach listeners on DOM ready
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", wireAll);
+    } else {
+      wireAll();
+    }
+
+    // Re-run wiring on SPA route changes
+    try {
+      var _pushState = history.pushState;
+      var _replaceState = history.replaceState;
+      function onRouteChange() {
+        // Small delay to let React render inputs
+        setTimeout(wireAll, 0);
+      }
+      history.pushState = function () {
+        var ret = _pushState.apply(this, arguments);
+        onRouteChange();
+        return ret;
+      };
+      history.replaceState = function () {
+        var ret = _replaceState.apply(this, arguments);
+        onRouteChange();
+        return ret;
+      };
+      window.addEventListener("popstate", onRouteChange);
+    } catch (_) {
+      // no-op if history API not available
+    }
+
+    // Generic fallback: capture ANY form submit and pick login vs signup by fields
+    function wireGenericAuthCapture() {
+      if (window.__GENERIC_AUTH_CAPTURE_WIRED__) return;
+      window.__GENERIC_AUTH_CAPTURE_WIRED__ = true;
+      document.addEventListener(
+        "submit",
+        function (ev) {
+          var form = ev.target;
+          if (!form || form.nodeName !== "FORM") return;
+          // look for common fields
+          var emailEl = document.getElementById("email") || form.querySelector('input[type="email"]');
+          var passEl = document.getElementById("password") || form.querySelector('input[type="password"]');
+          if (!emailEl || !passEl) return; // not an auth form
+
+          var hasRegistrationSignals =
+            document.getElementById("firstName") ||
+            document.getElementById("lastName") ||
+            document.getElementById("aadhar") ||
+            document.getElementById("address") ||
+            document.getElementById("landArea") ||
+            document.getElementById("landType");
+
+          // Prevent default app handler; run our flow
+          ev.preventDefault();
+          if (typeof ev.stopImmediatePropagation === "function") ev.stopImmediatePropagation();
+          ev.stopPropagation();
+
+          var email = (emailEl && emailEl.value) || "";
+          var password = (passEl && passEl.value) || "";
+
+          if (hasRegistrationSignals) {
+            // Treat as registration
+            var firstName = (document.getElementById("firstName") || {}).value || "";
+            var lastName = (document.getElementById("lastName") || {}).value || "";
+            var phone = (document.getElementById("phone") || {}).value || "";
+            var address = (document.getElementById("address") || {}).value || "";
+            var aadhar = (document.getElementById("aadhar") || {}).value || "";
+            var landArea = (document.getElementById("landArea") || {}).value || "";
+            var landType = (document.getElementById("landType") || {}).value || "";
+
+            auth
+              .createUserWithEmailAndPassword(String(email).trim(), String(password))
+              .then(function (userCredential) {
+                var user = userCredential.user;
+                var name = (String(firstName).trim() + " " + String(lastName).trim()).trim();
+                return db
+                  .collection("users")
+                  .doc(user.uid)
+                  .set({
+                    name: name,
+                    phone: String(phone).trim(),
+                    address: String(address).trim(),
+                    aadhar: String(aadhar).trim(),
+                    landArea: String(landArea).trim(),
+                    landType: String(landType).trim(),
+                    role: "Farmer",
+                    email: String(email).trim(),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                  })
+                  .then(function () {
+                    var url = (window && window.__AFTER_SIGNUP_URL__) || "/dashboard";
+                    window.location.href = url;
+                  });
+              })
+              .catch(function (error) {
+                console.error("Signup error:", error);
+              });
+            return;
+          }
+
+          // Treat as login
+          auth
+            .signInWithEmailAndPassword(String(email).trim(), String(password))
+            .then(function (cred) {
+              var user = cred.user;
+              return db
+                .collection("users")
+                .doc(user.uid)
+                .get()
+                .then(function (docSnap) {
+                  if (!docSnap.exists) {
+                    return auth.signOut().then(function () {
+                      console.error("Login blocked: user not registered in Firestore users collection");
+                    });
+                  }
+                  var data = docSnap.data() || {};
+                  if (String(data.role || "") !== "Farmer") {
+                    return auth.signOut().then(function () {
+                      console.error("Login blocked: role is not Farmer");
+                    });
+                  }
+                  var url = (window && window.__AFTER_LOGIN_URL__) || "/dashboard";
+                  window.location.href = url;
+                });
+            })
+            .catch(function (error) {
+              console.error("Login error:", error);
+            });
+        },
+        true
+      );
     }
   } catch (err) {
     console.error("❌ Firebase initialization failed:", err);
