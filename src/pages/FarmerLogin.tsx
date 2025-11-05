@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import FloatingOrbs from '../components/FloatingOrbs';
 import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
+import { getAuth, getDb } from '../lib/firebaseCompat';
 
 export default function FarmerLogin() {
   const [showPassword, setShowPassword] = useState(false);
@@ -17,15 +18,27 @@ export default function FarmerLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Show loading animation
     setIsLoading(true);
-    
-    // Simulate login delay
-    setTimeout(() => {
+    try {
+      const auth = getAuth();
+      const db = getDb();
+      const cred = await auth.signInWithEmailAndPassword(email.trim(), password);
+      const user = cred.user;
+      const doc = await db.collection('users').doc(user.uid).get();
+      const data = doc.exists ? doc.data() : null;
+      if (!data || String(data.role) !== 'Farmer') {
+        await auth.signOut();
+        setIsLoading(false);
+        return;
+      }
+      console.log('✅ Farmer logged in');
       navigate('/dashboard');
-    }, 2000);
+    } catch (err) {
+      console.error('Login error', err);
+      setIsLoading(false);
+    }
   };
 
   if (isLoading) {

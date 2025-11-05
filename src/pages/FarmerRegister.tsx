@@ -10,6 +10,7 @@ import FloatingOrbs from '../components/FloatingOrbs';
 import { Progress } from '../components/ui/progress';
 import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
+import { getAuth, getDb } from '../lib/firebaseCompat';
 
 export default function FarmerRegister() {
   const [showPassword, setShowPassword] = useState(false);
@@ -30,15 +31,42 @@ export default function FarmerRegister() {
     setPasswordStrength(strength);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Show loading animation
     setIsLoading(true);
-    
-    // Simulate registration delay
-    setTimeout(() => {
-      navigate('/farmer-login');
-    }, 2000);
+    try {
+      const form = e.target as HTMLFormElement;
+      const firstName = (document.getElementById('firstName') as HTMLInputElement).value.trim();
+      const lastName = (document.getElementById('lastName') as HTMLInputElement).value.trim();
+      const phone = (document.getElementById('phone') as HTMLInputElement).value.trim();
+      const email = (document.getElementById('email') as HTMLInputElement).value.trim();
+      const pass = (document.getElementById('password') as HTMLInputElement).value;
+      const address = (document.getElementById('address') as HTMLTextAreaElement).value.trim();
+      const aadhar = (document.getElementById('aadhar') as HTMLInputElement).value.trim();
+      const landArea = (document.getElementById('landArea') as HTMLInputElement).value.trim();
+      const landType = (document.getElementById('landType') as HTMLInputElement).value.trim();
+      const auth = getAuth();
+      const db = getDb();
+      const cred = await auth.createUserWithEmailAndPassword(email, pass);
+      const user = cred.user;
+      await db.collection('users').doc(user.uid).set({
+        name: `${firstName} ${lastName}`.trim(),
+        phone,
+        address,
+        aadhar,
+        landArea,
+        landType,
+        role: 'Farmer',
+        email,
+        createdAt: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
+        updatedAt: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
+      });
+      console.log('✅ Farmer registered');
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Signup error', err);
+      setIsLoading(false);
+    }
   };
 
   if (isLoading) {

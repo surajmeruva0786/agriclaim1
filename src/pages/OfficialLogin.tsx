@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/badge';
 import FloatingOrbs from '../components/FloatingOrbs';
 import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
+import { getAuth, getDb } from '../lib/firebaseCompat';
 
 type Role = 'verifier' | 'field-officer' | 'revenue-officer' | 'treasury-officer';
 
@@ -49,16 +50,31 @@ export default function OfficialLogin() {
     },
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Show loading animation
     setIsLoading(true);
-    
-    // Simulate login delay
-    setTimeout(() => {
-      // Navigate to appropriate dashboard based on role
+    try {
+      const email = (document.getElementById('employeeId') as HTMLInputElement).value.trim();
+      const password = (document.getElementById('password') as HTMLInputElement).value;
+      const auth = getAuth();
+      const db = getDb();
+      const cred = await auth.signInWithEmailAndPassword(email, password);
+      const user = cred.user;
+      const doc = await db.collection('users').doc(user.uid).get();
+      const data = doc.exists ? doc.data() : null;
+      const role = data?.role || '';
+      const selected = selectedRole === 'verifier' ? 'Verifier' : selectedRole === 'field-officer' ? 'FieldOfficer' : selectedRole === 'revenue-officer' ? 'RevenueOfficer' : selectedRole === 'treasury-officer' ? 'TreasuryOfficer' : '';
+      if (role !== selected) {
+        await auth.signOut();
+        setIsLoading(false);
+        return;
+      }
+      console.log('✅ Official logged in as', role);
       navigate(`/${selectedRole}`);
-    }, 2000);
+    } catch (err) {
+      console.error('Official login error', err);
+      setIsLoading(false);
+    }
   };
 
   const selectedRoleData = roles.find(r => r.id === selectedRole);

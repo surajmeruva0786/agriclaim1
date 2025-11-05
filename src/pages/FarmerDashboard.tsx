@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, FileText, CheckCircle2, Clock, XCircle, Eye, Calendar, Wheat as WheatIcon } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import FloatingOrbs from '../components/FloatingOrbs';
@@ -17,6 +17,8 @@ import { Progress } from '../components/ui/progress';
 import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
+import { getDb } from '../lib/firebaseCompat';
+import { useAuth } from '../contexts/AuthContext';
 
 type Claim = {
   id: string;
@@ -34,6 +36,7 @@ type Claim = {
 };
 
 export default function FarmerDashboard() {
+  const { user } = useAuth();
   const [showNewClaimModal, setShowNewClaimModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showUserInfo, setShowUserInfo] = useState(false);
@@ -98,49 +101,39 @@ export default function FarmerDashboard() {
     registrationDate: '15 Jan 2024',
   };
 
-  const [claims, setClaims] = useState<Claim[]>([
-    {
-      id: 'CL2024001',
-      cropType: 'Wheat',
-      cause: 'Drought',
-      date: '2024-10-15',
-      damagePercent: 65,
-      status: 'approved',
-      submittedDate: '2024-10-20',
-      description: 'Severe drought conditions affected the wheat crop during the critical growth phase. Water shortage led to stunted growth and significant yield loss. The crop was in the flowering stage when the drought occurred, which severely impacted grain formation.',
-      imageLinks: 'https://drive.google.com/drive/folders/1a2b3c4d5e6f7g8h9i0j',
-      documentLinks: 'https://drive.google.com/drive/folders/9i8h7g6f5e4d3c2b1a0z',
-      estimatedLoss: '₹45,000',
-      remarks: 'Approved after field verification. Payment processing initiated.',
-    },
-    {
-      id: 'CL2024002',
-      cropType: 'Rice',
-      cause: 'Flood',
-      date: '2024-09-10',
-      damagePercent: 80,
-      status: 'under-review',
-      submittedDate: '2024-09-12',
-      description: 'Heavy rainfall and flooding submerged the rice paddy fields for over 72 hours. The standing crop was completely waterlogged, leading to root damage and plant death. The flood waters also washed away topsoil and nutrients.',
-      imageLinks: 'https://drive.google.com/drive/folders/2b3c4d5e6f7g8h9i0j1k',
-      documentLinks: 'https://drive.google.com/drive/folders/8h7g6f5e4d3c2b1a0z9y',
-      estimatedLoss: '₹1,20,000',
-      remarks: 'Under review by field officer. Inspection scheduled for tomorrow.',
-    },
-    {
-      id: 'CL2024003',
-      cropType: 'Cotton',
-      cause: 'Pest Attack',
-      date: '2024-08-05',
-      damagePercent: 45,
-      status: 'rejected',
-      submittedDate: '2024-08-07',
-      description: 'Pink bollworm infestation affected the cotton crop. Multiple bolls showed signs of damage with larvae presence. Despite pesticide application, the infestation spread rapidly across the field.',
-      imageLinks: 'https://drive.google.com/drive/folders/3c4d5e6f7g8h9i0j1k2l',
-      estimatedLoss: '₹35,000',
-      remarks: 'Claim rejected: Pest attack damage does not meet the minimum threshold of 50% as per policy guidelines. Farmer can resubmit if damage increases.',
-    },
-  ]);
+  const [claims, setClaims] = useState<Claim[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const db = getDb();
+    console.log('✅ Listening for farmer claims');
+    const unsub = db
+      .collection('claims')
+      .where('farmerId', '==', user.uid)
+      .orderBy('createdAt', 'desc')
+      .onSnapshot((snap: any) => {
+        const list: Claim[] = [];
+        snap.forEach((d: any) => {
+          const data = d.data();
+          list.push({
+            id: d.id,
+            cropType: data.cropType,
+            cause: data.cause,
+            date: data.lossDate,
+            damagePercent: data.damagePercent,
+            status: (data.status || 'submitted').toLowerCase(),
+            submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
+            description: data.description,
+            imageLinks: data.imageLinks,
+            documentLinks: data.documentLinks,
+            estimatedLoss: data.estimatedLoss,
+            remarks: data.latestRemark || '',
+          });
+        });
+        setClaims(list);
+      });
+    return () => unsub && unsub();
+  }, [user]);
 
   const stats = [
     {
@@ -179,25 +172,62 @@ export default function FarmerDashboard() {
     setShowClaimDetails(true);
   };
 
-  const handleSubmitClaim = (e: React.FormEvent) => {
+  const handleSubmitClaim = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     setShowNewClaimModal(false);
     setIsUploading(true);
-    
-    // Simulate upload progress
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setUploadProgress(progress);
-      if (progress >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          setIsUploading(false);
-          setShowSuccessModal(true);
-          setUploadProgress(0);
-        }, 500);
-      }
-    }, 200);
+    try {
+      const cropType = (document.getElementById('cropType') as HTMLInputElement).value.trim();
+      const lossDate = (document.getElementById('lossDate') as HTMLInputElement).value;
+      const causeEl = document.querySelector('[data-radix-select-trigger]') as HTMLElement | null;
+      const cause = (document.getElementById('cause') as HTMLInputElement)?.value || 'other';
+      const description = (document.getElementById('description') as HTMLTextAreaElement).value.trim();
+      const imageLinks = (document.getElementById('imageLinks') as HTMLTextAreaElement).value.trim();
+      const documentLinks = (document.getElementById('documentLinks') as HTMLTextAreaElement | null)?.value?.trim() || '';
+      const db = getDb();
+      const payload = {
+        farmerId: user.uid,
+        cropType,
+        cause: cause || 'other',
+        lossDate,
+        damagePercent: damagePercent[0],
+        description,
+        imageLinks,
+        documentLinks: documentLinks || null,
+        status: 'Submitted',
+        stage: 'verifier',
+        createdAt: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
+        updatedAt: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
+        history: [
+          {
+            at: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
+            by: user.uid,
+            action: 'Submitted',
+            role: 'Farmer',
+          },
+        ],
+      };
+      await db.collection('claims').add(payload);
+      console.log('✅ Claim Submitted');
+      // Simulate progress completion UI
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 20;
+        setUploadProgress(progress);
+        if (progress >= 100) {
+          clearInterval(interval);
+          setTimeout(() => {
+            setIsUploading(false);
+            setShowSuccessModal(true);
+            setUploadProgress(0);
+          }, 300);
+        }
+      }, 120);
+    } catch (err) {
+      console.error('❌ Claim submission failed', err);
+      setIsUploading(false);
+    }
   };
 
   return (

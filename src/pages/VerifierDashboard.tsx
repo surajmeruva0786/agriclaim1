@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Grid, List, XCircle, Forward, Eye, Filter, Search, FileText, ExternalLink, MapPin, User, Phone, Mail, Home, CreditCard, Sprout } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import FloatingOrbs from '../components/FloatingOrbs';
@@ -18,10 +18,13 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
+import { getDb } from '../lib/firebaseCompat';
+import { useAuth } from '../contexts/AuthContext';
 
 type ViewMode = 'grid' | 'list';
 
 export default function VerifierDashboard() {
+  const { user } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
   const [actionType, setActionType] = useState<'reject' | 'forward' | 'details' | null>(null);
@@ -70,85 +73,42 @@ export default function VerifierDashboard() {
     },
   ]);
 
-  const [claims, setClaims] = useState<Claim[]>([
-    {
-      id: 'CL2024101',
-      farmerName: 'Ramesh Sharma',
-      farmerContact: '+91 98765 11111',
-      farmerEmail: 'ramesh.sharma@email.com',
-      farmerAddress: 'Village Rampur, Tehsil Bhopal, District Bhopal, Madhya Pradesh - 462001',
-      farmerAadhaar: '1234 5678 9012',
-      farmerBankAccount: 'HDFC Bank - 50100123456789',
-      cropType: 'Wheat',
-      cropVariety: 'HD-2967',
-      areaAffected: 5.5,
-      cause: 'Drought',
-      lossDate: '2024-10-15',
-      damagePercent: 65,
-      submittedDate: '2024-10-20',
-      status: 'pending',
-      description: 'Severe drought conditions led to significant crop loss in my wheat field. The prolonged dry spell caused severe moisture stress affecting grain formation.',
-      documents: [
-        { name: 'Land Records.pdf', url: 'https://drive.google.com/file/land-records', type: 'pdf' },
-        { name: 'Field Photo 1.jpg', url: 'https://drive.google.com/file/field-photo-1', type: 'image' },
-        { name: 'Field Photo 2.jpg', url: 'https://drive.google.com/file/field-photo-2', type: 'image' },
-        { name: 'Aadhaar Card.pdf', url: 'https://drive.google.com/file/aadhaar', type: 'pdf' },
-      ],
-    },
-    {
-      id: 'CL2024102',
-      farmerName: 'Suresh Patel',
-      farmerContact: '+91 98765 22222',
-      farmerEmail: 'suresh.patel@email.com',
-      farmerAddress: 'Village Khargone, Tehsil Khargone, District Khargone, Madhya Pradesh - 451001',
-      farmerAadhaar: '2345 6789 0123',
-      farmerBankAccount: 'SBI - 30200987654321',
-      cropType: 'Rice',
-      cropVariety: 'IR-64',
-      areaAffected: 8.0,
-      cause: 'Flood',
-      lossDate: '2024-09-10',
-      damagePercent: 80,
-      submittedDate: '2024-09-12',
-      status: 'pending',
-      description: 'Heavy rainfall caused flooding in the paddy fields, destroying most of the crop. Water logging for 4 days completely damaged the standing crop.',
-      documents: [
-        { name: 'Land Ownership.pdf', url: 'https://drive.google.com/file/land-own', type: 'pdf' },
-        { name: 'Flood Damage Photo.jpg', url: 'https://drive.google.com/file/flood-damage', type: 'image' },
-        { name: 'Bank Passbook.pdf', url: 'https://drive.google.com/file/bank', type: 'pdf' },
-      ],
-    },
-    {
-      id: 'CL2024103',
-      farmerName: 'Mahesh Kumar',
-      farmerContact: '+91 98765 33333',
-      farmerEmail: 'mahesh.kumar@email.com',
-      farmerAddress: 'Village Dewas, Tehsil Dewas, District Dewas, Madhya Pradesh - 455001',
-      farmerAadhaar: '3456 7890 1234',
-      farmerBankAccount: 'ICICI Bank - 60300234567890',
-      cropType: 'Cotton',
-      cropVariety: 'Bt Cotton Hybrid',
-      areaAffected: 6.5,
-      cause: 'Pest Attack',
-      lossDate: '2024-08-05',
-      damagePercent: 45,
-      submittedDate: '2024-08-07',
-      status: 'forwarded',
-      description: 'Bollworm infestation damaged a significant portion of the cotton crop. Despite pesticide application, the pest attack was severe during flowering stage.',
-      documents: [
-        { name: 'Land Records.pdf', url: 'https://drive.google.com/file/land-mahesh', type: 'pdf' },
-        { name: 'Pest Damage Photos.jpg', url: 'https://drive.google.com/file/pest-damage', type: 'image' },
-        { name: 'Pesticide Bills.pdf', url: 'https://drive.google.com/file/pesticide-bills', type: 'pdf' },
-      ],
-      verifierRemarks: {
-        status: 'forwarded',
-        remarks: 'All documents verified. Land records and farmer identity confirmed. Forwarding to field officer for physical inspection.',
-        verifiedBy: 'Dr. Anjali Verma',
-        verifiedDate: '2024-08-08',
-        documentsVerified: true,
-      },
-    },
-  ]);
+  const [claims, setClaims] = useState<Claim[]>([]);
+
+  useEffect(() => {
+    const db = getDb();
+    console.log('✅ Listening for verifier claims');
+    const unsub = db
+      .collection('claims')
+      .where('stage', '==', 'verifier')
+      .onSnapshot((snap: any) => {
+        const list: Claim[] = [];
+        snap.forEach((d: any) => {
+          const data = d.data();
+          list.push({
+            id: d.id,
+            farmerName: data.farmerName || 'Farmer',
+            farmerContact: data.farmerContact || '',
+            farmerEmail: data.farmerEmail || '',
+            farmerAddress: data.farmerAddress || '',
+            farmerAadhaar: data.aadhar || '',
+            farmerBankAccount: data.bank || '',
+            cropType: data.cropType,
+            cropVariety: data.cropVariety || '',
+            areaAffected: data.areaAffected || 0,
+            cause: data.cause,
+            lossDate: data.lossDate,
+            damagePercent: data.damagePercent || 0,
+            submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
+            status: (data.status || 'Submitted').toLowerCase(),
+            description: data.description || '',
+            documents: (data.documents || []).map((x: any) => ({ name: x.name || 'Link', url: x.url || data.imageLinks, type: x.type || 'link' })),
+          } as any);
+        });
+        setClaims(list);
+      });
+    return () => unsub && unsub();
+  }, []);
 
   const stats = [
     { label: 'Pending', value: claims.filter(c => c.status === 'pending').length, color: 'from-orange-500 to-yellow-500' },
@@ -169,15 +129,39 @@ export default function VerifierDashboard() {
     setActionType(action);
   };
 
-  const confirmAction = () => {
+  const confirmAction = async () => {
     if (!selectedClaim || !actionType) return;
 
+    const db = getDb();
+    const claimRef = db.collection('claims').doc(selectedClaim.id);
     if (actionType === 'reject') {
-      setClaims(claims.map(c => c.id === selectedClaim.id ? { ...c, status: 'rejected' } : c));
-      toast.success('Claim rejected');
+      await claimRef.update({
+        status: 'Rejected',
+        stage: 'rejected',
+        updatedAt: window.firebaseDb.firestore.FieldValue.serverTimestamp(),
+        latestRemark: 'Rejected by Verifier',
+        history: window.firebaseDb.firestore.FieldValue.arrayUnion({
+          at: window.firebaseDb.firestore.FieldValue.serverTimestamp(),
+          by: user?.uid || 'system',
+          action: 'Rejected',
+          role: 'Verifier',
+        }),
+      });
+      toast.success('✅ Status updated: Rejected');
     } else if (actionType === 'forward') {
-      setClaims(claims.map(c => c.id === selectedClaim.id ? { ...c, status: 'forwarded' } : c));
-      toast.success('Claim forwarded to Field Officer');
+      await claimRef.update({
+        status: 'Verified',
+        stage: 'field',
+        updatedAt: window.firebaseDb.firestore.FieldValue.serverTimestamp(),
+        latestRemark: 'Forwarded to Field Officer',
+        history: window.firebaseDb.firestore.FieldValue.arrayUnion({
+          at: window.firebaseDb.firestore.FieldValue.serverTimestamp(),
+          by: user?.uid || 'system',
+          action: 'Verified and Forwarded',
+          role: 'Verifier',
+        }),
+      });
+      toast.success('✅ Forwarded to Field Officer');
     }
 
     setActionType(null);
