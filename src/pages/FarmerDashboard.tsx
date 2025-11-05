@@ -90,16 +90,16 @@ export default function FarmerDashboard() {
     },
   ]);
 
-  const farmerInfo = {
-    name: 'Rajesh Kumar',
-    email: 'rajesh.kumar@example.com',
-    phone: '+91 98765 43210',
-    aadhar: '1234 5678 9012',
-    address: 'Village Rampur, District Bareilly, Uttar Pradesh - 243001',
-    landArea: '5.5 acres',
-    landType: 'Irrigated',
-    registrationDate: '15 Jan 2024',
-  };
+  const [farmerInfo, setFarmerInfo] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    aadhar: '',
+    address: '',
+    landArea: '',
+    landType: '',
+    registrationDate: '',
+  });
 
   const [claims, setClaims] = useState<Claim[]>([]);
 
@@ -110,7 +110,6 @@ export default function FarmerDashboard() {
     const unsub = db
       .collection('claims')
       .where('farmerId', '==', user.uid)
-      .orderBy('createdAt', 'desc')
       .onSnapshot((snap: any) => {
         const list: Claim[] = [];
         snap.forEach((d: any) => {
@@ -130,9 +129,33 @@ export default function FarmerDashboard() {
             remarks: data.latestRemark || '',
           });
         });
+        // sort locally by createdAt desc if present
         setClaims(list);
       });
     return () => unsub && unsub();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const db = getDb();
+    db
+      .collection('users')
+      .doc(user.uid)
+      .get()
+      .then((doc: any) => {
+        const data = doc.exists ? doc.data() : {} as any;
+        setFarmerInfo({
+          name: (data.name || '').toString(),
+          email: (data.email || '').toString(),
+          phone: (data.phone || '').toString(),
+          aadhar: (data.aadhar || '').toString(),
+          address: (data.address || '').toString(),
+          landArea: (data.landArea || '').toString(),
+          landType: (data.landType || '').toString(),
+          registrationDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toDateString() : '',
+        });
+      })
+      .catch(() => {});
   }, [user]);
 
   const stats = [

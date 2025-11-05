@@ -10,12 +10,15 @@ import FloatingOrbs from '../components/FloatingOrbs';
 import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
 import { getAuth, getDb } from '../lib/firebaseCompat';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
 export default function FarmerLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showError, setShowError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -31,6 +34,8 @@ export default function FarmerLogin() {
       if (!data || String(data.role) !== 'Farmer') {
         await auth.signOut();
         setIsLoading(false);
+        setErrorMessage('Invalid credentials or role. Please use a valid Farmer account.');
+        setShowError(true);
         return;
       }
       console.log('✅ Farmer logged in');
@@ -38,6 +43,8 @@ export default function FarmerLogin() {
     } catch (err) {
       console.error('Login error', err);
       setIsLoading(false);
+      setErrorMessage('Incorrect email or password. Please try again.');
+      setShowError(true);
     }
   };
 
@@ -146,6 +153,17 @@ export default function FarmerLogin() {
           </CardContent>
         </Card>
       </div>
+      <Dialog open={showError} onOpenChange={setShowError}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Login Failed</DialogTitle>
+            <DialogDescription>{errorMessage}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowError(false)}>OK</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }

@@ -11,12 +11,15 @@ import FloatingOrbs from '../components/FloatingOrbs';
 import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
 import { getAuth, getDb } from '../lib/firebaseCompat';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
 type Role = 'verifier' | 'field-officer' | 'revenue-officer' | 'treasury-officer';
 
 export default function OfficialLogin() {
   const [selectedRole, setSelectedRole] = useState<Role>('verifier');
   const [isLoading, setIsLoading] = useState(false);
+  const [showError, setShowError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const navigate = useNavigate();
 
   const roles = [
@@ -67,6 +70,8 @@ export default function OfficialLogin() {
       if (role !== selected) {
         await auth.signOut();
         setIsLoading(false);
+        setErrorMessage('Invalid credentials or role mismatch for selected portal.');
+        setShowError(true);
         return;
       }
       console.log('✅ Official logged in as', role);
@@ -74,6 +79,8 @@ export default function OfficialLogin() {
     } catch (err) {
       console.error('Official login error', err);
       setIsLoading(false);
+      setErrorMessage('Incorrect username or password. Please try again.');
+      setShowError(true);
     }
   };
 
@@ -214,6 +221,17 @@ export default function OfficialLogin() {
         </div>
       </div>
     </div>
+    <Dialog open={showError} onOpenChange={setShowError}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Login Failed</DialogTitle>
+          <DialogDescription>{errorMessage}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button onClick={() => setShowError(false)}>OK</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </PageTransition>
   );
 }
