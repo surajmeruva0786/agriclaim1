@@ -18,7 +18,7 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
-import { getDb } from '../lib/firebaseCompat';
+import { getDb, serverTimestamp, arrayUnion } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
 
 type ViewMode = 'grid' | 'list';
@@ -138,10 +138,10 @@ export default function VerifierDashboard() {
       await claimRef.update({
         status: 'Rejected',
         stage: 'rejected',
-        updatedAt: window.firebaseDb.firestore.FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
         latestRemark: 'Rejected by Verifier',
-        history: window.firebaseDb.firestore.FieldValue.arrayUnion({
-          at: window.firebaseDb.firestore.FieldValue.serverTimestamp(),
+        history: arrayUnion({
+          at: serverTimestamp(),
           by: user?.uid || 'system',
           action: 'Rejected',
           role: 'Verifier',
@@ -152,10 +152,10 @@ export default function VerifierDashboard() {
       await claimRef.update({
         status: 'Verified',
         stage: 'field',
-        updatedAt: window.firebaseDb.firestore.FieldValue.serverTimestamp(),
+        updatedAt: serverTimestamp(),
         latestRemark: 'Forwarded to Field Officer',
-        history: window.firebaseDb.firestore.FieldValue.arrayUnion({
-          at: window.firebaseDb.firestore.FieldValue.serverTimestamp(),
+        history: arrayUnion({
+          at: serverTimestamp(),
           by: user?.uid || 'system',
           action: 'Verified and Forwarded',
           role: 'Verifier',

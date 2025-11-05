@@ -10,7 +10,7 @@ import FloatingOrbs from '../components/FloatingOrbs';
 import { Progress } from '../components/ui/progress';
 import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
-import { getAuth, getDb } from '../lib/firebaseCompat';
+import { getAuth, getDb, serverTimestamp } from '../lib/firebaseCompat';
 
 export default function FarmerRegister() {
   const [showPassword, setShowPassword] = useState(false);
@@ -58,8 +58,8 @@ export default function FarmerRegister() {
         landType,
         role: 'Farmer',
         email,
-        createdAt: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
-        updatedAt: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
       console.log('✅ Farmer registered');
       navigate('/dashboard');

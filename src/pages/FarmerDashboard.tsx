@@ -17,7 +17,7 @@ import { Progress } from '../components/ui/progress';
 import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
-import { getDb } from '../lib/firebaseCompat';
+import { getDb, serverTimestamp } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
 
 type Claim = {
@@ -197,11 +197,11 @@ export default function FarmerDashboard() {
         documentLinks: documentLinks || null,
         status: 'Submitted',
         stage: 'verifier',
-        createdAt: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
-        updatedAt: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         history: [
           {
-            at: window.firebaseDb.firestore.FieldValue.serverTimestamp ? window.firebaseDb.firestore.FieldValue.serverTimestamp() : new Date(),
+            at: serverTimestamp(),
             by: user.uid,
             action: 'Submitted',
             role: 'Farmer',

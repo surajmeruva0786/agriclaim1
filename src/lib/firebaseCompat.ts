@@ -55,4 +55,20 @@ export function claimsCollection() {
 	return getDb().collection('claims');
 }
 
+export function serverTimestamp() {
+	const fb: any = (window as any).firebase;
+	if (!fb || !fb.firestore || !fb.firestore.FieldValue) {
+		throw new Error('Firebase FieldValue not available');
+	}
+	return fb.firestore.FieldValue.serverTimestamp();
+}
+
+export function arrayUnion(...values: any[]) {
+	const fb: any = (window as any).firebase;
+	if (!fb || !fb.firestore || !fb.firestore.FieldValue) {
+		throw new Error('Firebase FieldValue not available');
+	}
+	return fb.firestore.FieldValue.arrayUnion(...values);
+}
+
 
