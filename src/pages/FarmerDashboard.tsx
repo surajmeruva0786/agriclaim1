@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, FileText, CheckCircle2, Clock, XCircle, Eye, Calendar, Wheat as WheatIcon } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import FloatingOrbs from '../components/FloatingOrbs';
@@ -45,6 +45,8 @@ export default function FarmerDashboard() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [damagePercent, setDamagePercent] = useState([50]);
+  const [cause, setCause] = useState<string>('other');
+  const [submittedClaimId, setSubmittedClaimId] = useState<string>('');
   const [notifications, setNotifications] = useState<Notification[]>([
     {
       id: 'notif-1',
@@ -114,20 +116,33 @@ export default function FarmerDashboard() {
         const list: Claim[] = [];
         snap.forEach((d: any) => {
           const data = d.data();
+          // Normalize status to match our Claim type
+          let normalizedStatus = (data.status || 'submitted').toLowerCase();
+          if (normalizedStatus === 'verified') normalizedStatus = 'under-review';
+          if (normalizedStatus === 'field verified') normalizedStatus = 'under-review';
+          if (normalizedStatus === 'revenue approved') normalizedStatus = 'approved';
+          if (normalizedStatus === 'paid') normalizedStatus = 'approved';
+          
           list.push({
             id: d.id,
-            cropType: data.cropType,
-            cause: data.cause,
-            date: data.lossDate,
-            damagePercent: data.damagePercent,
-            status: (data.status || 'submitted').toLowerCase(),
-            submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
-            description: data.description,
-            imageLinks: data.imageLinks,
-            documentLinks: data.documentLinks,
-            estimatedLoss: data.estimatedLoss,
+            cropType: data.cropType || '',
+            cause: data.cause || 'other',
+            date: data.lossDate || '',
+            damagePercent: data.damagePercent || 0,
+            status: normalizedStatus as 'submitted' | 'under-review' | 'approved' | 'rejected',
+            submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+            description: data.description || '',
+            imageLinks: data.imageLinks || '',
+            documentLinks: data.documentLinks || '',
+            estimatedLoss: data.estimatedLoss || '',
             remarks: data.latestRemark || '',
           });
+        });
+        // Sort by createdAt descending (newest first)
+        list.sort((a, b) => {
+          const dateA = new Date(a.submittedDate).getTime();
+          const dateB = new Date(b.submittedDate).getTime();
+          return dateB - dateA;
         });
         // sort locally by createdAt desc if present
         setClaims(list);
@@ -167,13 +182,13 @@ export default function FarmerDashboard() {
     },
     {
       label: 'Pending',
-      value: claims.filter(c => c.status === 'under-review' || c.status === 'submitted').length,
+      value: claims.filter((c: Claim) => c.status === 'under-review' || c.status === 'submitted').length,
       icon: Clock,
       color: 'from-orange-500 to-yellow-500',
     },
     {
       label: 'Approved',
-      value: claims.filter(c => c.status === 'approved').length,
+      value: claims.filter((c: Claim) => c.status === 'approved').length,
       icon: CheckCircle2,
       color: 'from-green-500 to-emerald-500',
     },
@@ -195,7 +210,7 @@ export default function FarmerDashboard() {
     setShowClaimDetails(true);
   };
 
-  const handleSubmitClaim = async (e: React.FormEvent) => {
+  const handleSubmitClaim = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!user) return;
     setShowNewClaimModal(false);
@@ -203,12 +218,20 @@ export default function FarmerDashboard() {
     try {
       const cropType = (document.getElementById('cropType') as HTMLInputElement).value.trim();
       const lossDate = (document.getElementById('lossDate') as HTMLInputElement).value;
-      const causeEl = document.querySelector('[data-radix-select-trigger]') as HTMLElement | null;
-      const cause = (document.getElementById('cause') as HTMLInputElement)?.value || 'other';
       const description = (document.getElementById('description') as HTMLTextAreaElement).value.trim();
       const imageLinks = (document.getElementById('imageLinks') as HTMLTextAreaElement).value.trim();
       const documentLinks = (document.getElementById('documentLinks') as HTMLTextAreaElement | null)?.value?.trim() || '';
+      
+      if (!cropType || !lossDate || !description || !imageLinks) {
+        toast.error('Please fill in all required fields');
+        setIsUploading(false);
+        setShowNewClaimModal(true);
+        return;
+      }
+
       const db = getDb();
+      // Use regular Date for history array since serverTimestamp() can't be used inside arrays
+      const now = new Date();
       const payload = {
         farmerId: user.uid,
         cropType,
@@ -224,15 +247,27 @@ export default function FarmerDashboard() {
         updatedAt: serverTimestamp(),
         history: [
           {
-            at: serverTimestamp(),
+            at: now.toISOString(),
             by: user.uid,
             action: 'Submitted',
             role: 'Farmer',
           },
         ],
       };
-      await db.collection('claims').add(payload);
-      console.log('✅ Claim Submitted');
+      const docRef = await db.collection('claims').add(payload);
+      console.log('✅ Claim Submitted', docRef.id);
+      setSubmittedClaimId(docRef.id);
+      toast.success('Claim submitted successfully!');
+      
+      // Reset form
+      (document.getElementById('cropType') as HTMLInputElement).value = '';
+      (document.getElementById('lossDate') as HTMLInputElement).value = '';
+      (document.getElementById('description') as HTMLTextAreaElement).value = '';
+      (document.getElementById('imageLinks') as HTMLTextAreaElement).value = '';
+      (document.getElementById('documentLinks') as HTMLTextAreaElement | null)!.value = '';
+      setCause('other');
+      setDamagePercent([50]);
+      
       // Simulate progress completion UI
       let progress = 0;
       const interval = setInterval(() => {
@@ -247,9 +282,11 @@ export default function FarmerDashboard() {
           }, 300);
         }
       }, 120);
-    } catch (err) {
+    } catch (err: any) {
       console.error('❌ Claim submission failed', err);
+      toast.error(err?.message || 'Failed to submit claim. Please try again.');
       setIsUploading(false);
+      setShowNewClaimModal(true);
     }
   };
 
@@ -363,22 +400,32 @@ export default function FarmerDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {claims.map((claim) => (
-                    <TableRow key={claim.id}>
-                      <TableCell className="font-mono">{claim.id}</TableCell>
-                      <TableCell>{claim.cropType}</TableCell>
-                      <TableCell>{claim.cause}</TableCell>
-                      <TableCell>{claim.date}</TableCell>
-                      <TableCell>{claim.damagePercent}%</TableCell>
-                      <TableCell>{getStatusBadge(claim.status)}</TableCell>
-                      <TableCell>{claim.submittedDate}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="sm" onClick={() => handleViewClaim(claim)}>
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                  {claims.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                        <FileText className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                        <p>No claims submitted yet</p>
+                        <p className="text-sm mt-1">Click the + button to submit your first claim</p>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    claims.map((claim) => (
+                      <TableRow key={claim.id}>
+                        <TableCell className="font-mono text-xs">{claim.id.slice(0, 8)}...</TableCell>
+                        <TableCell>{claim.cropType}</TableCell>
+                        <TableCell className="capitalize">{claim.cause}</TableCell>
+                        <TableCell>{claim.date}</TableCell>
+                        <TableCell>{claim.damagePercent}%</TableCell>
+                        <TableCell>{getStatusBadge(claim.status)}</TableCell>
+                        <TableCell>{claim.submittedDate}</TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="sm" onClick={() => handleViewClaim(claim)}>
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -419,8 +466,8 @@ export default function FarmerDashboard() {
 
               <div className="space-y-2">
                 <Label htmlFor="cause">Cause of Loss *</Label>
-                <Select required>
-                  <SelectTrigger>
+                <Select value={cause} onValueChange={setCause} required>
+                  <SelectTrigger id="cause">
                     <SelectValue placeholder="Select cause" />
                   </SelectTrigger>
                   <SelectContent>
@@ -524,7 +571,7 @@ export default function FarmerDashboard() {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-gray-500">Claim ID</p>
-                  <p className="font-mono">CL2024004</p>
+                  <p className="font-mono text-xs">{submittedClaimId || 'Processing...'}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Status</p>
@@ -532,7 +579,7 @@ export default function FarmerDashboard() {
                 </div>
                 <div className="col-span-2">
                   <p className="text-gray-500">Submitted On</p>
-                  <p>November 4, 2025</p>
+                  <p>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 </div>
               </div>
             </div>
