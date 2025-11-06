@@ -259,12 +259,11 @@ export default function FarmerDashboard() {
       setSubmittedClaimId(docRef.id);
       toast.success('Claim submitted successfully!');
       
-      // Reset form
-      (document.getElementById('cropType') as HTMLInputElement).value = '';
-      (document.getElementById('lossDate') as HTMLInputElement).value = '';
-      (document.getElementById('description') as HTMLTextAreaElement).value = '';
-      (document.getElementById('imageLinks') as HTMLTextAreaElement).value = '';
-      (document.getElementById('documentLinks') as HTMLTextAreaElement | null)!.value = '';
+      // Reset form (guard against missing optional fields)
+      ['cropType', 'lossDate', 'description', 'imageLinks', 'documentLinks'].forEach((fieldId) => {
+        const el = document.getElementById(fieldId) as HTMLInputElement | HTMLTextAreaElement | null;
+        if (el) (el as any).value = '';
+      });
       setCause('other');
       setDamagePercent([50]);
       
