@@ -85,6 +85,32 @@ export default function VerifierDashboard() {
         const list: Claim[] = [];
         snap.forEach((d: any) => {
           const data = d.data();
+          const rawStatus = (data.status || 'Submitted').toLowerCase();
+          let normalizedStatus: 'pending' | 'approved' | 'rejected' | 'forwarded';
+          if (
+            rawStatus === 'submitted' ||
+            rawStatus === 'under-review' ||
+            rawStatus === 'verified' ||
+            rawStatus === 'field verified'
+          ) {
+            normalizedStatus = 'pending';
+          } else if (rawStatus === 'rejected') {
+            normalizedStatus = 'rejected';
+          } else if (
+            rawStatus === 'verified and forwarded' ||
+            rawStatus === 'forwarded' ||
+            rawStatus === 'field'
+          ) {
+            normalizedStatus = 'forwarded';
+          } else if (
+            rawStatus === 'approved' ||
+            rawStatus === 'revenue approved' ||
+            rawStatus === 'paid'
+          ) {
+            normalizedStatus = 'approved';
+          } else {
+            normalizedStatus = 'pending';
+          }
           list.push({
             id: d.id,
             farmerName: data.farmerName || 'Farmer',
@@ -100,7 +126,7 @@ export default function VerifierDashboard() {
             lossDate: data.lossDate,
             damagePercent: data.damagePercent || 0,
             submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
-            status: (data.status || 'Submitted').toLowerCase(),
+            status: normalizedStatus,
             description: data.description || '',
             documents: (data.documents || []).map((x: any) => ({ name: x.name || 'Link', url: x.url || data.imageLinks, type: x.type || 'link' })),
           } as any);
@@ -175,7 +201,8 @@ export default function VerifierDashboard() {
       rejected: { label: 'Rejected', className: 'bg-red-100 text-red-700' },
       forwarded: { label: 'Forwarded', className: 'bg-blue-100 text-blue-700' },
     };
-    return <Badge className={configs[status].className}>{configs[status].label}</Badge>;
+    const cfg = (configs as any)[status] || configs.pending;
+    return <Badge className={cfg.className}>{cfg.label}</Badge>;
   };
 
   return (
