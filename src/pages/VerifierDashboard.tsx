@@ -141,7 +141,21 @@ export default function VerifierDashboard() {
               submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
               status: normalizedStatus,
               description: data.description || '',
-              documents: (data.documents || []).map((x: any) => ({ name: x.name || 'Link', url: x.url || data.imageLinks, type: x.type || 'link' })),
+              documents: (() => {
+                const docs: any[] = [];
+                if (data.imageLinks) {
+                  docs.push({ name: 'Crop Damage Images', url: data.imageLinks, type: 'image' });
+                }
+                if (data.documentLinks) {
+                  docs.push({ name: 'Supporting Documents', url: data.documentLinks, type: 'pdf' });
+                }
+                if (data.documents && Array.isArray(data.documents)) {
+                  data.documents.forEach((x: any) => {
+                    docs.push({ name: x.name || 'Document', url: x.url || '', type: x.type || 'link' });
+                  });
+                }
+                return docs;
+              })(),
             } as any;
           };
           listPromises.push(fetchFarmer());
@@ -185,40 +199,49 @@ export default function VerifierDashboard() {
   const confirmAction = async () => {
     if (!selectedClaim || !actionType) return;
 
-    const db = getDb();
-    const claimRef = db.collection('claims').doc(selectedClaim.id);
-    if (actionType === 'reject') {
-      await claimRef.update({
-        status: 'Rejected',
-        stage: 'rejected',
-        updatedAt: serverTimestamp(),
-        latestRemark: 'Rejected by Verifier',
-        history: arrayUnion({
-          at: serverTimestamp(),
-          by: user?.uid || 'system',
-          action: 'Rejected',
-          role: 'Verifier',
-        }),
-      });
-      toast.success('✅ Status updated: Rejected');
-    } else if (actionType === 'forward') {
-      await claimRef.update({
-        status: 'Verified',
-        stage: 'field',
-        updatedAt: serverTimestamp(),
-        latestRemark: 'Forwarded to Field Officer',
-        history: arrayUnion({
-          at: serverTimestamp(),
-          by: user?.uid || 'system',
-          action: 'Verified and Forwarded',
-          role: 'Verifier',
-        }),
-      });
-      toast.success('✅ Forwarded to Field Officer');
+    try {
+      const db = getDb();
+      const claimRef = db.collection('claims').doc(selectedClaim.id);
+      if (actionType === 'reject') {
+        const reasonEl = document.getElementById('reason') as HTMLTextAreaElement;
+        const reason = reasonEl?.value?.trim() || 'Rejected by Verifier';
+        await claimRef.update({
+          status: 'Rejected',
+          stage: 'rejected',
+          updatedAt: serverTimestamp(),
+          latestRemark: reason,
+          history: arrayUnion({
+            at: serverTimestamp(),
+            by: user?.uid || 'system',
+            action: 'Rejected',
+            role: 'Verifier',
+            note: reason,
+          }),
+        });
+        toast.success('✅ Status updated: Rejected');
+      } else if (actionType === 'forward') {
+        const notesEl = document.getElementById('notes') as HTMLTextAreaElement;
+        const notes = notesEl?.value?.trim() || 'Forwarded to Field Officer';
+        await claimRef.update({
+          status: 'Verified',
+          stage: 'field',
+          updatedAt: serverTimestamp(),
+          latestRemark: notes,
+          history: arrayUnion({
+            at: serverTimestamp(),
+            by: user?.uid || 'system',
+            action: 'Verified and Forwarded',
+            role: 'Verifier',
+            note: notes,
+          }),
+        });
+        toast.success('✅ Forwarded to Field Officer');
+      }
+      setActionType(null);
+      setSelectedClaim(null);
+    } catch (err: any) {
+      toast.error('Failed to update claim: ' + (err?.message || 'Unknown error'));
     }
-
-    setActionType(null);
-    setSelectedClaim(null);
   };
 
   const getStatusBadge = (status: Claim['status']) => {

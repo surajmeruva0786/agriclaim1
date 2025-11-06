@@ -16,8 +16,11 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
+import { getDb, serverTimestamp, arrayUnion } from '../lib/firebaseCompat';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function TreasuryOfficerDashboard() {
+  const { user } = useAuth();
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
   const [officerName, setOfficerName] = useState<string>('Treasury Officer');
   const [officerDept, setOfficerDept] = useState<string>('Treasury & Payments');
@@ -65,56 +68,70 @@ export default function TreasuryOfficerDashboard() {
     },
   ]);
 
-  const [claims, setClaims] = useState<Claim[]>([
-    {
-      id: 'CL2024103',
-      farmerName: 'Mahesh Kumar',
-      farmerContact: '+91 98765 33333',
-      farmerEmail: 'mahesh.kumar@email.com',
-      farmerAddress: 'Village Dewas, Tehsil Dewas, District Dewas, Madhya Pradesh - 455001',
-      farmerAadhaar: '3456 7890 1234',
-      farmerBankAccount: 'ICICI Bank - 60300234567890',
-      cropType: 'Cotton',
-      cropVariety: 'Bt Cotton Hybrid',
-      areaAffected: 6.5,
-      cause: 'Pest Attack',
-      lossDate: '2024-08-05',
-      damagePercent: 45,
-      submittedDate: '2024-08-07',
-      status: 'forwarded',
-      description: 'Bollworm infestation damaged a significant portion of the cotton crop. Despite pesticide application, the pest attack was severe during flowering stage.',
-      documents: [
-        { name: 'Land Records.pdf', url: 'https://drive.google.com/file/land-mahesh', type: 'pdf' },
-        { name: 'Pest Damage Photos.jpg', url: 'https://drive.google.com/file/pest-damage', type: 'image' },
-        { name: 'Pesticide Bills.pdf', url: 'https://drive.google.com/file/pesticide-bills', type: 'pdf' },
-      ],
-      verifierRemarks: {
-        status: 'forwarded',
-        remarks: 'All documents verified. Land records and farmer identity confirmed. Forwarding to field officer for physical inspection.',
-        verifiedBy: 'Dr. Anjali Verma',
-        verifiedDate: '2024-08-08',
-        documentsVerified: true,
-      },
-      fieldOfficerRemarks: {
-        status: 'forwarded',
-        remarks: 'Field inspection completed. Pest damage confirmed on site. Bollworm infestation visible on 40% of the crop. Farmer has taken preventive measures. Forwarding to Revenue Officer for compensation assessment.',
-        inspectedBy: 'Mr. Vikram Singh',
-        inspectionDate: '2024-08-10',
-        fieldVisitCompleted: true,
-        actualDamagePercent: 40,
-        gpsCoordinates: '23.8103° N, 75.8472° E',
-        fieldPhotos: ['field_inspection_1.jpg', 'field_inspection_2.jpg'],
-      },
-      revenueOfficerRemarks: {
-        status: 'forwarded',
-        remarks: 'Compensation assessment completed. Based on 40% damage to 6.5 acres of Bt Cotton, calculated compensation at ₹18,500 per acre with damage adjustment. Total approved amount: ₹120,000. Forwarding to Treasury for final payment approval.',
-        assessedBy: 'Mr. Rajesh Gupta',
-        assessmentDate: '2024-08-12',
-        compensationAmount: 120000,
-        calculationBasis: 'Base rate: ₹18,500/acre × 6.5 acres × 40% damage = ₹48,100 (rounded to ₹120,000 including support provisions)',
-      },
-    },
-  ]);
+  const [claims, setClaims] = useState<Claim[]>([]);
+
+  useEffect(() => {
+    const db = getDb();
+    console.log('✅ Listening for treasury claims');
+    const unsub = db
+      .collection('claims')
+      .where('stage', '==', 'treasury')
+      .onSnapshot(async (snap: any) => {
+        const listPromises: Promise<Claim>[] = [];
+        snap.forEach((d: any) => {
+          const data = d.data();
+          const rawStatus = (data.status || 'Submitted').toLowerCase();
+          let normalizedStatus: 'pending' | 'approved' | 'rejected' | 'forwarded';
+          if (rawStatus === 'rejected') {
+            normalizedStatus = 'rejected';
+          } else if (rawStatus === 'approved' || rawStatus === 'paid') {
+            normalizedStatus = 'approved';
+          } else {
+            normalizedStatus = 'pending';
+          }
+          const fetchFarmer = async () => {
+            let farmerProfile: any = {};
+            try {
+              if (data.farmerId) {
+                const udoc = await db.collection('users').doc(data.farmerId).get();
+                if (udoc.exists) farmerProfile = udoc.data() || {};
+              }
+            } catch (_) {}
+            const docs: any[] = [];
+            if (data.imageLinks) {
+              docs.push({ name: 'Crop Damage Images', url: data.imageLinks, type: 'image' });
+            }
+            if (data.documentLinks) {
+              docs.push({ name: 'Supporting Documents', url: data.documentLinks, type: 'pdf' });
+            }
+            return {
+              id: d.id,
+              farmerName: farmerProfile.name || data.farmerName || 'Farmer',
+              farmerContact: farmerProfile.phone || data.farmerContact || '',
+              farmerEmail: farmerProfile.email || data.farmerEmail || '',
+              farmerAddress: farmerProfile.address || data.farmerAddress || '',
+              farmerAadhaar: farmerProfile.aadhar || data.aadhar || '',
+              farmerBankAccount: farmerProfile.bank || data.bank || '',
+              cropType: data.cropType,
+              cropVariety: data.cropVariety || '',
+              areaAffected: data.areaAffected || 0,
+              cause: data.cause,
+              lossDate: data.lossDate,
+              damagePercent: data.damagePercent || 0,
+              submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
+              status: normalizedStatus,
+              description: data.description || '',
+              documents: docs,
+              compensationAmount: data.compensationAmount || data.estimatedLoss || 0,
+            } as any;
+          };
+          listPromises.push(fetchFarmer());
+        });
+        const list = await Promise.all(listPromises);
+        setClaims(list);
+      });
+    return () => unsub && unsub();
+  }, []);
 
   const stats = [
     {
@@ -131,7 +148,7 @@ export default function TreasuryOfficerDashboard() {
     },
     {
       label: 'Total Disbursed',
-      value: `₹${(claims.filter(c => c.status === 'approved').reduce((sum, c) => sum + c.compensationAmount, 0) / 100000).toFixed(1)}L`,
+      value: `₹${(claims.filter(c => c.status === 'approved').reduce((sum, c) => sum + ((c as any).compensationAmount || 0), 0) / 100000).toFixed(1)}L`,
       icon: DollarSign,
       color: 'from-blue-500 to-cyan-500',
     },
@@ -159,7 +176,7 @@ export default function TreasuryOfficerDashboard() {
     setShowHistoryModal(true);
   };
 
-  const confirmApproval = () => {
+  const confirmApproval = async () => {
     if (!selectedClaim) return;
 
     const allChecked = Object.values(verificationChecklist).every(v => v);
@@ -168,15 +185,27 @@ export default function TreasuryOfficerDashboard() {
       return;
     }
 
-    setClaims(claims.map(c =>
-      c.id === selectedClaim.id
-        ? { ...c, status: 'approved', approvedDate: '2024-11-04' }
-        : c
-    ));
-
-    toast.success(`Payment of ₹${selectedClaim.compensationAmount.toLocaleString()} approved`);
-    setShowApprovalModal(false);
-    setSelectedClaim(null);
+    try {
+      const db = getDb();
+      const claimRef = db.collection('claims').doc(selectedClaim.id);
+      await claimRef.update({
+        status: 'Paid',
+        stage: 'done',
+        updatedAt: serverTimestamp(),
+        latestRemark: 'Payment approved and processed by Treasury Officer',
+        history: arrayUnion({
+          at: serverTimestamp(),
+          by: user?.uid || 'system',
+          action: 'Payment Approved',
+          role: 'TreasuryOfficer',
+        }),
+      });
+      toast.success(`Payment of ₹${((selectedClaim as any).compensationAmount || 0).toLocaleString()} approved`);
+      setShowApprovalModal(false);
+      setSelectedClaim(null);
+    } catch (err: any) {
+      toast.error('Failed to approve payment: ' + (err?.message || 'Unknown error'));
+    }
   };
 
   const getStatusBadge = (status: Claim['status']) => {
@@ -295,7 +324,7 @@ export default function TreasuryOfficerDashboard() {
                 {/* Compensation Amount - Prominent */}
                 <div className="bg-gradient-to-br from-primary/10 to-secondary/10 rounded-lg p-4 text-center border-2 border-primary/20">
                   <p className="text-sm text-gray-600 mb-1">Compensation Amount</p>
-                  <p className="text-3xl gradient-text">₹{claim.compensationAmount.toLocaleString()}</p>
+                  <p className="text-3xl gradient-text">₹{((claim as any).compensationAmount || 0).toLocaleString()}</p>
                 </div>
 
                 <div className="text-sm space-y-2">
@@ -397,7 +426,7 @@ export default function TreasuryOfficerDashboard() {
               {/* Payment Summary */}
               <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 text-center">
                 <p className="text-sm text-green-700 mb-2">Payment Amount</p>
-                <p className="text-4xl gradient-text">₹{selectedClaim.compensationAmount.toLocaleString()}</p>
+                <p className="text-4xl gradient-text">₹{((selectedClaim as any).compensationAmount || 0).toLocaleString()}</p>
               </div>
 
               {/* Farmer & Bank Details */}
@@ -509,7 +538,7 @@ export default function TreasuryOfficerDashboard() {
               className="bg-gradient-to-r from-green-500 to-emerald-500 text-white"
               onClick={confirmApproval}
             >
-              Approve Payment of ₹{selectedClaim?.compensationAmount.toLocaleString()}
+              Approve Payment of ₹{((selectedClaim as any)?.compensationAmount || 0).toLocaleString()}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -537,7 +566,7 @@ export default function TreasuryOfficerDashboard() {
                   </div>
                   <div>
                     <p className="text-gray-500">Final Amount</p>
-                    <p className="gradient-text">₹{selectedClaim.compensationAmount.toLocaleString()}</p>
+                    <p className="gradient-text">₹{((selectedClaim as any).compensationAmount || 0).toLocaleString()}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">Status</p>
