@@ -87,7 +87,9 @@ export default function OfficialLogin() {
         const cred = await auth.signInWithEmailAndPassword(email, password);
         user = cred.user;
       } catch (err: any) {
-        if (err && err.code === 'auth/user-not-found') {
+        const code = err?.code || '';
+        // Some Firebase SDK versions return auth/invalid-credential instead of user-not-found
+        if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
           const cred = await auth.createUserWithEmailAndPassword(email, password);
           user = cred.user;
           // Create users profile with role from officials mapping
