@@ -20,6 +20,7 @@ import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
 import { getDb, serverTimestamp, arrayUnion } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
+import { getDb as getDbCompat } from '../lib/firebaseCompat';
 
 type ViewMode = 'grid' | 'list';
 
@@ -74,6 +75,7 @@ export default function VerifierDashboard() {
   ]);
 
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [officerName, setOfficerName] = useState<string>('Document Verifier');
 
   useEffect(() => {
     const db = getDb();
@@ -135,6 +137,16 @@ export default function VerifierDashboard() {
       });
     return () => unsub && unsub();
   }, []);
+
+  // Load current official profile for Navbar
+  useEffect(() => {
+    if (!user) return;
+    const db = getDbCompat();
+    db.collection('users').doc(user.uid).get().then((doc: any) => {
+      const data = doc.exists ? doc.data() : null;
+      if (data && data.name) setOfficerName(data.name);
+    }).catch(() => {});
+  }, [user]);
 
   const stats = [
     { label: 'Pending', value: claims.filter(c => c.status === 'pending').length, color: 'from-orange-500 to-yellow-500' },
@@ -211,7 +223,7 @@ export default function VerifierDashboard() {
         <FloatingOrbs />
       <Navbar
         user={{
-          name: 'Dr. Anjali Verma',
+          name: officerName,
           role: 'Document Verifier',
         }}
         notificationsList={notifications}

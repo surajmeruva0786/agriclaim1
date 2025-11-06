@@ -12,7 +12,7 @@ import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
 import { getAuth, getDb } from '../lib/firebaseCompat';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
-import { ensureSeedOfficials, getOfficialByUsername, usernameToEmail } from '../lib/officials';
+import { ensureSeedOfficials, getOfficialByRoleAndUsername, roleIdToRoleTitle } from '../lib/officials';
 
 type Role = 'verifier' | 'field-officer' | 'revenue-officer' | 'treasury-officer';
 
@@ -67,7 +67,8 @@ export default function OfficialLogin() {
       const password = (document.getElementById('password') as HTMLInputElement).value;
       const auth = getAuth();
       const db = getDb();
-      const official = await getOfficialByUsername(username);
+      const roleId = selectedRole; // matches collections naming
+      const official = await getOfficialByRoleAndUsername(roleId, username);
       if (!official) {
         setIsLoading(false);
         setErrorMessage('No such official user. Please check your username.');
@@ -88,6 +89,10 @@ export default function OfficialLogin() {
         role: official.role,
         linkedOfficial: username,
         isTempOfficial: true,
+        department: official.department || undefined,
+        phone: official.phone || undefined,
+        email: official.email || undefined,
+        address: official.address || undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
       }, { merge: true });
@@ -95,7 +100,7 @@ export default function OfficialLogin() {
       const userDoc = await db.collection('users').doc(user.uid).get();
       const data = userDoc.exists ? userDoc.data() : null;
       const role = (data?.role as string) || '';
-      const selected = selectedRole === 'verifier' ? 'Verifier' : selectedRole === 'field-officer' ? 'FieldOfficer' : selectedRole === 'revenue-officer' ? 'RevenueOfficer' : selectedRole === 'treasury-officer' ? 'TreasuryOfficer' : '';
+      const selected = roleIdToRoleTitle(selectedRole);
       const allowed = role === 'Admin' || role === selected;
       if (!allowed) {
         await auth.signOut();
