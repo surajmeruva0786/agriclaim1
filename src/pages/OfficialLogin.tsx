@@ -74,36 +74,23 @@ export default function OfficialLogin() {
         setShowError(true);
         return;
       }
-      const email = usernameToEmail(username);
       if (!official.password || official.password !== password) {
         setIsLoading(false);
         setErrorMessage('Incorrect username or password.');
         setShowError(true);
         return;
       }
-      // Try sign-in; if user not found, provision account
-      let user;
-      try {
-        const cred = await auth.signInWithEmailAndPassword(email, password);
-        user = cred.user;
-      } catch (err: any) {
-        const code = err?.code || '';
-        // Some Firebase SDK versions return auth/invalid-credential instead of user-not-found
-        if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
-          const cred = await auth.createUserWithEmailAndPassword(email, password);
-          user = cred.user;
-          // Create users profile with role from officials mapping
-          await db.collection('users').doc(user.uid).set({
-            name: official.displayName || username,
-            email,
-            role: official.role,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }, { merge: true });
-        } else {
-          throw err;
-        }
-      }
+      // Auth: sign in anonymously and attach role; no email required for officials
+      const anon = await auth.signInAnonymously();
+      const user = anon.user;
+      await db.collection('users').doc(user.uid).set({
+        name: official.displayName || username,
+        role: official.role,
+        linkedOfficial: username,
+        isTempOfficial: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }, { merge: true });
       // Ensure role matches selected portal (Admin can access all)
       const userDoc = await db.collection('users').doc(user.uid).get();
       const data = userDoc.exists ? userDoc.data() : null;
