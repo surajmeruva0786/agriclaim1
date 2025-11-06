@@ -170,12 +170,15 @@ export default function RevenueOfficerDashboard() {
   };
 
   const getStatusBadge = (status: Claim['status']) => {
-    const configs = {
+    const configs: any = {
       'pending-review': { label: 'Pending Review', className: 'bg-orange-100 text-orange-700' },
       'approved': { label: 'Approved', className: 'bg-green-100 text-green-700' },
       'rejected': { label: 'Rejected', className: 'bg-red-100 text-red-700' },
+      'forwarded': { label: 'Forwarded', className: 'bg-blue-100 text-blue-700' },
+      'under-review': { label: 'Under Review', className: 'bg-orange-100 text-orange-700' },
     };
-    return <Badge className={configs[status].className}>{configs[status].label}</Badge>;
+    const cfg = configs[status] || configs['pending-review'];
+    return <Badge className={cfg.className}>{cfg.label}</Badge>;
   };
 
   useEffect(() => {

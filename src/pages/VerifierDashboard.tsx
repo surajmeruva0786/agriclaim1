@@ -84,8 +84,8 @@ export default function VerifierDashboard() {
     const unsub = db
       .collection('claims')
       .where('stage', '==', 'verifier')
-      .onSnapshot((snap: any) => {
-        const list: Claim[] = [];
+      .onSnapshot(async (snap: any) => {
+        const listPromises: Promise<Claim>[] = [];
         snap.forEach((d: any) => {
           const data = d.data();
           const rawStatus = (data.status || 'Submitted').toLowerCase();
@@ -114,26 +114,39 @@ export default function VerifierDashboard() {
           } else {
             normalizedStatus = 'pending';
           }
-          list.push({
-            id: d.id,
-            farmerName: data.farmerName || 'Farmer',
-            farmerContact: data.farmerContact || '',
-            farmerEmail: data.farmerEmail || '',
-            farmerAddress: data.farmerAddress || '',
-            farmerAadhaar: data.aadhar || '',
-            farmerBankAccount: data.bank || '',
-            cropType: data.cropType,
-            cropVariety: data.cropVariety || '',
-            areaAffected: data.areaAffected || 0,
-            cause: data.cause,
-            lossDate: data.lossDate,
-            damagePercent: data.damagePercent || 0,
-            submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
-            status: normalizedStatus,
-            description: data.description || '',
-            documents: (data.documents || []).map((x: any) => ({ name: x.name || 'Link', url: x.url || data.imageLinks, type: x.type || 'link' })),
-          } as any);
+          // Fetch farmer profile if farmerId exists
+          const farmerId = data.farmerId;
+          const fetchFarmer = async () => {
+            let farmerProfile: any = {};
+            try {
+              if (farmerId) {
+                const udoc = await db.collection('users').doc(farmerId).get();
+                if (udoc.exists) farmerProfile = udoc.data() || {};
+              }
+            } catch (_) {}
+            return {
+              id: d.id,
+              farmerName: farmerProfile.name || data.farmerName || 'Farmer',
+              farmerContact: farmerProfile.phone || data.farmerContact || '',
+              farmerEmail: farmerProfile.email || data.farmerEmail || '',
+              farmerAddress: farmerProfile.address || data.farmerAddress || '',
+              farmerAadhaar: farmerProfile.aadhar || data.aadhar || '',
+              farmerBankAccount: farmerProfile.bank || data.bank || '',
+              cropType: data.cropType,
+              cropVariety: data.cropVariety || '',
+              areaAffected: data.areaAffected || 0,
+              cause: data.cause,
+              lossDate: data.lossDate,
+              damagePercent: data.damagePercent || 0,
+              submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
+              status: normalizedStatus,
+              description: data.description || '',
+              documents: (data.documents || []).map((x: any) => ({ name: x.name || 'Link', url: x.url || data.imageLinks, type: x.type || 'link' })),
+            } as any;
+          };
+          listPromises.push(fetchFarmer());
         });
+        const list = await Promise.all(listPromises);
         setClaims(list);
       });
     return () => unsub && unsub();
