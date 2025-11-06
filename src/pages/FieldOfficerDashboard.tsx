@@ -156,7 +156,7 @@ export default function FieldOfficerDashboard() {
       latestRemark: 'Field inspection completed',
       verifiedDamagePercent: verifiedDamage[0],
       history: arrayUnion({
-        at: serverTimestamp(),
+        at: new Date().toISOString(),
         by: user?.uid || 'system',
         action: 'Field Verified and Forwarded',
         role: 'FieldOfficer',
@@ -178,7 +178,7 @@ export default function FieldOfficerDashboard() {
       updatedAt: serverTimestamp(),
       latestRemark: 'Rejected by Field Officer',
       history: arrayUnion({
-        at: serverTimestamp(),
+        at: new Date().toISOString(),
         by: user?.uid || 'system',
         action: 'Rejected',
         role: 'FieldOfficer',

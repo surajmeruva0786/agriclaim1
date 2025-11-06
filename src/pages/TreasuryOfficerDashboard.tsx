@@ -194,7 +194,7 @@ export default function TreasuryOfficerDashboard() {
         updatedAt: serverTimestamp(),
         latestRemark: 'Payment approved and processed by Treasury Officer',
         history: arrayUnion({
-          at: serverTimestamp(),
+          at: new Date().toISOString(),
           by: user?.uid || 'system',
           action: 'Payment Approved',
           role: 'TreasuryOfficer',

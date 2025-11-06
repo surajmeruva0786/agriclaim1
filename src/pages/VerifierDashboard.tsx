@@ -211,7 +211,7 @@ export default function VerifierDashboard() {
           updatedAt: serverTimestamp(),
           latestRemark: reason,
           history: arrayUnion({
-            at: serverTimestamp(),
+            at: new Date().toISOString(),
             by: user?.uid || 'system',
             action: 'Rejected',
             role: 'Verifier',
@@ -228,7 +228,7 @@ export default function VerifierDashboard() {
           updatedAt: serverTimestamp(),
           latestRemark: notes,
           history: arrayUnion({
-            at: serverTimestamp(),
+            at: new Date().toISOString(),
             by: user?.uid || 'system',
             action: 'Verified and Forwarded',
             role: 'Verifier',
