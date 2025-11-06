@@ -54,13 +54,32 @@ export default function FieldOfficerDashboard() {
     },
   ]);
 
-  const officerInfo = {
-    name: 'Mr. Vikram Singh',
+  const [officerInfo, setOfficerInfo] = useState({
+    name: 'Field Officer',
     role: 'Field Officer',
-    department: 'Agriculture Department',
+    department: 'Field Operations',
     accessLevel: 'Field Inspection',
-    loginTime: 'Nov 4, 2025 09:30 AM',
-  };
+    loginTime: new Date().toLocaleString(),
+    phone: '',
+    email: '',
+    address: '',
+  });
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('officialProfile');
+      if (!raw) return;
+      const prof = JSON.parse(raw || '{}');
+      setOfficerInfo((prev) => ({
+        ...prev,
+        name: prof.displayName || prev.name,
+        role: 'Field Officer',
+        department: prof.department || prev.department,
+        phone: prof.phone || '',
+        email: prof.email || '',
+        address: prof.address || '',
+      }));
+    } catch (_) {}
+  }, []);
 
   const [claims, setClaims] = useState<Claim[]>([]);
 

@@ -10,11 +10,12 @@ import { Badge } from '../components/ui/badge';
 import FloatingOrbs from '../components/FloatingOrbs';
 import LoadingAnimation from '../components/LoadingAnimation';
 import PageTransition from '../components/PageTransition';
-import { getAuth, getDb } from '../lib/firebaseCompat';
+import { getDb } from '../lib/firebaseCompat';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { ensureSeedOfficials, getOfficialByRoleAndUsername, roleIdToRoleTitle } from '../lib/officials';
+import { setManualOfficialSession } from '../contexts/AuthContext';
 
-type Role = 'verifier' | 'field-officer' | 'revenue-officer' | 'treasury-officer';
+type Role = 'verifier' | 'field' | 'revenue' | 'treasury';
 
 export default function OfficialLogin() {
   const [selectedRole, setSelectedRole] = useState<Role>('verifier');
@@ -32,21 +33,21 @@ export default function OfficialLogin() {
       color: 'from-blue-500 to-cyan-500',
     },
     {
-      id: 'field-officer' as Role,
+      id: 'field' as Role,
       name: 'Field Officer',
       icon: MapPin,
       description: 'Conduct on-site inspections and damage assessment',
       color: 'from-green-500 to-emerald-500',
     },
     {
-      id: 'revenue-officer' as Role,
+      id: 'revenue' as Role,
       name: 'Revenue Officer',
       icon: DollarSign,
       description: 'Calculate and approve compensation amounts',
       color: 'from-purple-500 to-pink-500',
     },
     {
-      id: 'treasury-officer' as Role,
+      id: 'treasury' as Role,
       name: 'Treasury Officer',
       icon: Building2,
       description: 'Process final payments and disbursements',
@@ -65,10 +66,9 @@ export default function OfficialLogin() {
     try {
       const username = (document.getElementById('employeeId') as HTMLInputElement).value.trim();
       const password = (document.getElementById('password') as HTMLInputElement).value;
-      const auth = getAuth();
       const db = getDb();
-      const roleId = selectedRole; // matches collections naming
-      const official = await getOfficialByRoleAndUsername(roleId, username);
+      const roleId = selectedRole; // matches new collections naming
+      const official = await getOfficialByRoleAndUsername(roleId as any, username);
       if (!official) {
         setIsLoading(false);
         setErrorMessage('No such official user. Please check your username.');
@@ -81,36 +81,24 @@ export default function OfficialLogin() {
         setShowError(true);
         return;
       }
-      // Auth: sign in anonymously and attach role; no email required for officials
-      const anon = await auth.signInAnonymously();
-      const user = anon.user;
-      await db.collection('users').doc(user.uid).set({
-        name: official.displayName || username,
-        role: official.role,
-        linkedOfficial: username,
-        isTempOfficial: true,
-        department: official.department || undefined,
-        phone: official.phone || undefined,
-        email: official.email || undefined,
-        address: official.address || undefined,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }, { merge: true });
-      // Ensure role matches selected portal (Admin can access all)
-      const userDoc = await db.collection('users').doc(user.uid).get();
-      const data = userDoc.exists ? userDoc.data() : null;
-      const role = (data?.role as string) || '';
-      const selected = roleIdToRoleTitle(selectedRole);
-      const allowed = role === 'Admin' || role === selected;
-      if (!allowed) {
-        await auth.signOut();
-        setIsLoading(false);
-        setErrorMessage('Invalid credentials or role mismatch for selected portal.');
-        setShowError(true);
-        return;
-      }
-      console.log('✅ Official logged in as', role);
-      navigate(`/${selectedRole}`);
+      // Manual session only
+      const roleTitle = roleIdToRoleTitle(selectedRole as any);
+      // Persist profile locally for dashboards/profile pages
+      try {
+        localStorage.setItem('officialProfile', JSON.stringify({
+          roleId: selectedRole,
+          role: roleTitle,
+          username,
+          displayName: official.displayName || username,
+          department: official.department || '',
+          phone: official.phone || '',
+          email: official.email || '',
+          address: official.address || '',
+        }));
+      } catch (_) {}
+      setManualOfficialSession({ name: official.displayName || username, role: roleTitle as any });
+      console.log('✅ Official logged in as', roleTitle);
+      navigate(`/${selectedRole === 'verifier' ? 'verifier' : selectedRole === 'field' ? 'field-officer' : selectedRole === 'revenue' ? 'revenue-officer' : 'treasury-officer'}`);
     } catch (err) {
       console.error('Official login error', err);
       setIsLoading(false);

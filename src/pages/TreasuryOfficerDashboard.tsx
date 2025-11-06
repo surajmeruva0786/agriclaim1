@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Building2, CheckCircle2, XCircle, DollarSign, Clock, FileCheck, Calendar, Eye, User, Phone, Mail, Home, CreditCard, Sprout, MapPin, FileText, ExternalLink } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import FloatingOrbs from '../components/FloatingOrbs';
@@ -19,6 +19,8 @@ import { Claim } from '../types/claim';
 
 export default function TreasuryOfficerDashboard() {
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+  const [officerName, setOfficerName] = useState<string>('Treasury Officer');
+  const [officerDept, setOfficerDept] = useState<string>('Treasury & Payments');
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -224,14 +226,24 @@ export default function TreasuryOfficerDashboard() {
     },
   ];
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('officialProfile');
+      if (!raw) return;
+      const prof = JSON.parse(raw || '{}');
+      if (prof.displayName) setOfficerName(prof.displayName);
+      if (prof.department) setOfficerDept(prof.department);
+    } catch (_) {}
+  }, []);
+
   return (
     <PageTransition>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 relative">
         <FloatingOrbs />
         <Navbar
           user={{
-            name: 'Mr. Arun Mehta',
-            role: 'Treasury Officer',
+            name: officerName,
+            role: officerDept,
           }}
           notificationsList={notifications}
           onNotificationsChange={setNotifications}

@@ -76,6 +76,7 @@ export default function VerifierDashboard() {
 
   const [claims, setClaims] = useState<Claim[]>([]);
   const [officerName, setOfficerName] = useState<string>('Document Verifier');
+  const [officerDept, setOfficerDept] = useState<string>('Verification Dept.');
 
   useEffect(() => {
     const db = getDb();
@@ -138,15 +139,16 @@ export default function VerifierDashboard() {
     return () => unsub && unsub();
   }, []);
 
-  // Load current official profile for Navbar
+  // Load current official profile for Navbar and info
   useEffect(() => {
-    if (!user) return;
-    const db = getDbCompat();
-    db.collection('users').doc(user.uid).get().then((doc: any) => {
-      const data = doc.exists ? doc.data() : null;
-      if (data && data.name) setOfficerName(data.name);
-    }).catch(() => {});
-  }, [user]);
+    try {
+      const raw = localStorage.getItem('officialProfile');
+      if (!raw) return;
+      const prof = JSON.parse(raw || '{}');
+      if (prof.displayName) setOfficerName(prof.displayName);
+      if (prof.department) setOfficerDept(prof.department);
+    } catch (_) {}
+  }, []);
 
   const stats = [
     { label: 'Pending', value: claims.filter(c => c.status === 'pending').length, color: 'from-orange-500 to-yellow-500' },
@@ -224,7 +226,7 @@ export default function VerifierDashboard() {
       <Navbar
         user={{
           name: officerName,
-          role: 'Document Verifier',
+          role: officerDept,
         }}
         notificationsList={notifications}
         onNotificationsChange={setNotifications}

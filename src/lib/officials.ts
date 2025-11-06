@@ -1,7 +1,7 @@
 import { getDb } from './firebaseCompat';
 
 export type OfficialRole = 'Verifier' | 'FieldOfficer' | 'RevenueOfficer' | 'TreasuryOfficer' | 'Admin';
-export type RoleId = 'verifier' | 'field-officer' | 'revenue-officer' | 'treasury-officer' | 'admin';
+export type RoleId = 'verifier' | 'field' | 'revenue' | 'treasury';
 
 export type OfficialRecord = {
 	username: string; // e.g., verifier1
@@ -19,26 +19,23 @@ export function roleIdToCollection(roleId: RoleId): string {
 }
 
 export function roleIdToRoleTitle(roleId: RoleId): OfficialRole {
-	return roleId === 'verifier'
-		? 'Verifier'
-		: roleId === 'field-officer'
-		? 'FieldOfficer'
-		: roleId === 'revenue-officer'
-		? 'RevenueOfficer'
-		: roleId === 'treasury-officer'
-		? 'TreasuryOfficer'
-		: 'Admin';
+    return roleId === 'verifier'
+        ? 'Verifier'
+        : roleId === 'field'
+        ? 'FieldOfficer'
+        : roleId === 'revenue'
+        ? 'RevenueOfficer'
+        : 'TreasuryOfficer';
 }
 
 export async function ensureSeedOfficials() {
 	const db = getDb();
-	const seed: Array<{ roleId: RoleId; rec: OfficialRecord }> = [
-		{ roleId: 'verifier', rec: { username: 'verifier1', role: 'Verifier', displayName: 'Document Verifier', password: 'verify123' } },
-		{ roleId: 'field-officer', rec: { username: 'field1', role: 'FieldOfficer', displayName: 'Field Officer', password: 'field123' } },
-		{ roleId: 'revenue-officer', rec: { username: 'revenue1', role: 'RevenueOfficer', displayName: 'Revenue Officer', password: 'revenue123' } },
-		{ roleId: 'treasury-officer', rec: { username: 'treasury1', role: 'TreasuryOfficer', displayName: 'Treasury Officer', password: 'treasury123' } },
-		{ roleId: 'admin', rec: { username: 'admin', role: 'Admin', displayName: 'Administrator', password: 'admin123' } },
-	];
+    const seed: Array<{ roleId: RoleId; rec: OfficialRecord }> = [
+        { roleId: 'verifier', rec: { username: 'verifier1', role: 'Verifier', displayName: 'Dr. Anjali Verma', password: 'verify123', department: 'Verification Dept.', phone: '+91 98765 43210', email: 'anjali.verma@gov.example', address: 'Block B, Secretariat, City' } },
+        { roleId: 'field', rec: { username: 'field1', role: 'FieldOfficer', displayName: 'Mr. Vikram Singh', password: 'field123', department: 'Field Operations', phone: '+91 99887 66554', email: 'vikram.singh@gov.example', address: 'District Office, Sector 12' } },
+        { roleId: 'revenue', rec: { username: 'revenue1', role: 'RevenueOfficer', displayName: 'Ms. Neha Rao', password: 'revenue123', department: 'Revenue Assessment', phone: '+91 91234 56780', email: 'neha.rao@gov.example', address: 'Revenue Bhavan, Floor 3' } },
+        { roleId: 'treasury', rec: { username: 'treasury1', role: 'TreasuryOfficer', displayName: 'Mr. Arjun Mehta', password: 'treasury123', department: 'Treasury & Payments', phone: '+91 90123 45678', email: 'arjun.mehta@gov.example', address: 'Treasury Dept., Central Office' } },
+    ];
 	await Promise.all(
 		seed.map(async ({ roleId, rec }) => {
 			const ref = db.collection(roleIdToCollection(roleId)).doc(rec.username);
