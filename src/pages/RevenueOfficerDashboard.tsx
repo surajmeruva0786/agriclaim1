@@ -133,7 +133,7 @@ export default function RevenueOfficerDashboard() {
               claimedDamage: data.damagePercent || 0,
               verifiedDamage: data.verifiedDamagePercent || data.damagePercent || 0,
               estimatedAmount: data.estimatedAmount || data.estimatedLoss || 0,
-              fieldOfficerNotes: data.latestRemark || '',
+              fieldOfficerNotes: (data.fieldOfficerRemarks && data.fieldOfficerRemarks.remarks) || data.latestRemark || '',
             } as RevenueClaim;
           };
           promises.push(build());
@@ -195,6 +195,14 @@ export default function RevenueOfficerDashboard() {
         updatedAt: serverTimestamp(),
         latestRemark: notes,
         estimatedAmount: compensationAmount[0],
+        revenueOfficerRemarks: {
+          status: 'approved',
+          remarks: notes,
+          assessedBy: officerName || (user?.uid || 'RevenueOfficer'),
+          assessmentDate: new Date().toISOString(),
+          compensationAmount: compensationAmount[0],
+          calculationBasis: 'Verified damage, crop type, area and policy rates',
+        },
         history: arrayUnion({
           at: new Date().toISOString(),
           by: user?.uid || 'system',

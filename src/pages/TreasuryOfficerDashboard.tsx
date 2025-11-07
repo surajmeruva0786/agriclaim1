@@ -123,7 +123,11 @@ export default function TreasuryOfficerDashboard() {
               status: normalizedStatus,
               description: data.description || '',
               documents: docs,
-              compensationAmount: data.compensationAmount || data.estimatedLoss || 0,
+              compensationAmount: data.estimatedAmount || data.compensationAmount || data.estimatedLoss || 0,
+              verifierRemarks: data.verifierRemarks,
+              fieldOfficerRemarks: data.fieldOfficerRemarks,
+              revenueOfficerRemarks: data.revenueOfficerRemarks,
+              verifiedDamage: data.verifiedDamagePercent || data.damagePercent || 0,
             } as any;
           };
           listPromises.push(fetchFarmer());

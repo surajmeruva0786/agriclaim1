@@ -215,12 +215,23 @@ export default function FieldOfficerDashboard() {
     if (!selectedClaim) return;
     const db = getDb();
     const claimRef = db.collection('claims').doc(selectedClaim.id);
+    const findingsEl = document.getElementById('findings') as HTMLTextAreaElement | null;
+    const findings = findingsEl?.value?.trim() || 'Field inspection completed';
     await claimRef.update({
       status: 'Field Verified',
       stage: 'revenue',
       updatedAt: serverTimestamp(),
-      latestRemark: 'Field inspection completed',
+      latestRemark: findings,
       verifiedDamagePercent: verifiedDamage[0],
+      fieldOfficerRemarks: {
+        status: 'forwarded',
+        remarks: findings,
+        inspectedBy: officerInfo.name || 'Field Officer',
+        inspectionDate: new Date().toISOString(),
+        fieldVisitCompleted: true,
+        actualDamagePercent: verifiedDamage[0],
+        fieldPhotos: uploadedPhotos,
+      },
       history: arrayUnion({
         at: new Date().toISOString(),
         by: user?.uid || 'system',
