@@ -189,10 +189,19 @@ export default function FieldOfficerDashboard() {
 
   const stats = [
     { label: 'Pending Inspection', value: claims.filter(c => c.status === 'pending-inspection').length, icon: MapPin, color: 'from-orange-500 to-yellow-500' },
-    { label: 'Inspected Today', value: claims.filter(c => c.status === 'inspected').length, icon: CheckCircle2, color: 'from-green-500 to-emerald-500' },
     { label: 'Forwarded', value: claims.filter(c => c.status === 'forwarded').length, icon: Upload, color: 'from-blue-500 to-cyan-500' },
     { label: 'Rejected', value: claims.filter(c => c.status === 'rejected').length, icon: XCircle, color: 'from-red-500 to-pink-500' },
   ];
+
+  useEffect(() => {
+    const db = getDb();
+    const pendingInspection = claims.filter(c => c.status === 'pending-inspection').length;
+    const forwarded = claims.filter(c => c.status === 'forwarded').length;
+    const rejected = claims.filter(c => c.status === 'rejected').length;
+    db.collection('meta').doc('officialCounters').set({
+      field: { pendingInspection, forwarded, rejected, total: claims.length, updatedAt: new Date().toISOString() },
+    }, { merge: true }).catch(() => {});
+  }, [claims]);
 
   const handleInspection = (claim: Claim) => {
     setSelectedClaim(claim);

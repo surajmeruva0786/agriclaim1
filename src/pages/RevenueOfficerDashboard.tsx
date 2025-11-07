@@ -152,7 +152,7 @@ export default function RevenueOfficerDashboard() {
       color: 'from-orange-500 to-yellow-500',
     },
     {
-      label: 'Approved Today',
+      label: 'Approved',
       value: claims.filter(c => c.status === 'approved').length,
       icon: CheckCircle2,
       color: 'from-green-500 to-emerald-500',
@@ -170,6 +170,17 @@ export default function RevenueOfficerDashboard() {
       color: 'from-blue-500 to-cyan-500',
     },
   ];
+
+  useEffect(() => {
+    const db = getDb();
+    const pendingReview = claims.filter(c => c.status === 'pending-review').length;
+    const approved = claims.filter(c => c.status === 'approved').length;
+    const rejected = claims.filter(c => c.status === 'rejected').length;
+    const totalForwardedAmount = claims.filter(c => c.status === 'approved').reduce((sum, c) => sum + (c.estimatedAmount || 0), 0);
+    db.collection('meta').doc('officialCounters').set({
+      revenue: { pendingReview, approved, rejected, totalForwardedAmount, total: claims.length, updatedAt: new Date().toISOString() },
+    }, { merge: true }).catch(() => {});
+  }, [claims]);
 
   const handleProcess = (claim: Claim) => {
     setSelectedClaim(claim);

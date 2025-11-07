@@ -140,14 +140,14 @@ export default function TreasuryOfficerDashboard() {
 
   const stats = [
     {
-      label: 'Pending Approval',
-      value: claims.filter(c => c.status === 'pending-payment').length,
+      label: 'Pending',
+      value: claims.filter(c => c.status === 'pending' || (c as any).status === 'pending-payment').length,
       icon: Clock,
       color: 'from-orange-500 to-yellow-500',
     },
     {
-      label: 'Approved Today',
-      value: claims.filter(c => c.status === 'approved' && c.approvedDate === '2024-11-04').length,
+      label: 'Approved',
+      value: claims.filter(c => c.status === 'approved').length,
       icon: CheckCircle2,
       color: 'from-green-500 to-emerald-500',
     },
@@ -165,6 +165,17 @@ export default function TreasuryOfficerDashboard() {
     },
   ];
 
+  useEffect(() => {
+    const db = getDb();
+    const pending = claims.filter(c => c.status === 'pending' || (c as any).status === 'pending-payment').length;
+    const approved = claims.filter(c => c.status === 'approved').length;
+    const rejected = claims.filter(c => c.status === 'rejected').length;
+    const totalDisbursed = claims.filter(c => c.status === 'approved').reduce((sum, c) => sum + ((c as any).compensationAmount || 0), 0);
+    db.collection('meta').doc('officialCounters').set({
+      treasury: { pending, approved, rejected, totalDisbursed, total: claims.length, updatedAt: new Date().toISOString() },
+    }, { merge: true }).catch(() => {});
+  }, [claims]);
+
   const handleApprove = (claim: Claim) => {
     setSelectedClaim(claim);
     setVerificationChecklist({
@@ -174,6 +185,50 @@ export default function TreasuryOfficerDashboard() {
       authorization: false,
     });
     setShowApprovalModal(true);
+  };
+
+  const markPaymentDone = async (claim: Claim) => {
+    try {
+      const db = getDb();
+      const claimRef = db.collection('claims').doc(claim.id);
+      await claimRef.update({
+        status: 'Paid',
+        stage: 'done',
+        updatedAt: serverTimestamp(),
+        latestRemark: 'Payment marked as done by Treasury',
+        history: arrayUnion({
+          at: new Date().toISOString(),
+          by: user?.uid || 'system',
+          action: 'Payment Done',
+          role: 'TreasuryOfficer',
+        }),
+      });
+      toast.success('Payment marked as done');
+    } catch (err: any) {
+      toast.error('Failed to mark payment: ' + (err?.message || 'Unknown error'));
+    }
+  };
+
+  const rejectAtTreasury = async (claim: Claim) => {
+    try {
+      const db = getDb();
+      const claimRef = db.collection('claims').doc(claim.id);
+      await claimRef.update({
+        status: 'Rejected',
+        stage: 'rejected',
+        updatedAt: serverTimestamp(),
+        latestRemark: 'Rejected by Treasury',
+        history: arrayUnion({
+          at: new Date().toISOString(),
+          by: user?.uid || 'system',
+          action: 'Rejected',
+          role: 'TreasuryOfficer',
+        }),
+      });
+      toast.success('Claim rejected at Treasury');
+    } catch (err: any) {
+      toast.error('Failed to reject: ' + (err?.message || 'Unknown error'));
+    }
   };
 
   const handleViewHistory = (claim: Claim) => {
@@ -392,6 +447,16 @@ export default function TreasuryOfficerDashboard() {
                     </div>
                   ))}
                 </div>
+
+              {/* Quick Actions */}
+              <div className="grid grid-cols-2 gap-2 pt-3 border-t">
+                <Button className="bg-gradient-to-r from-green-500 to-emerald-500 text-white" onClick={() => markPaymentDone(claim)}>
+                  <CheckCircle2 className="w-4 h-4 mr-2" /> Payment Done
+                </Button>
+                <Button variant="destructive" onClick={() => rejectAtTreasury(claim)}>
+                  <XCircle className="w-4 h-4 mr-2" /> Reject
+                </Button>
+              </div>
 
                 {claim.status === 'pending-payment' && (
                   <div className="grid grid-cols-2 gap-2 pt-3 border-t">

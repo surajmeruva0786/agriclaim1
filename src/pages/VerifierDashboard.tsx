@@ -184,10 +184,19 @@ export default function VerifierDashboard() {
 
   const stats = [
     { label: 'Pending', value: claims.filter(c => c.status === 'pending').length, color: 'from-orange-500 to-yellow-500' },
-    { label: 'Approved', value: claims.filter(c => c.status === 'approved').length, color: 'from-green-500 to-emerald-500' },
     { label: 'Rejected', value: claims.filter(c => c.status === 'rejected').length, color: 'from-red-500 to-pink-500' },
     { label: 'Forwarded', value: claims.filter(c => c.status === 'forwarded').length, color: 'from-blue-500 to-cyan-500' },
   ];
+
+  useEffect(() => {
+    const db = getDb();
+    const pending = claims.filter(c => c.status === 'pending').length;
+    const rejected = claims.filter(c => c.status === 'rejected').length;
+    const forwarded = claims.filter(c => c.status === 'forwarded').length;
+    db.collection('meta').doc('officialCounters').set({
+      verifier: { pending, rejected, forwarded, total: claims.length, updatedAt: new Date().toISOString() },
+    }, { merge: true }).catch(() => {});
+  }, [claims]);
 
   const filteredClaims = claims.filter(claim => {
     const matchesSearch = claim.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
