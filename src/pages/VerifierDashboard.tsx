@@ -18,7 +18,7 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
-import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer } from '../lib/firebaseCompat';
+import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer, recomputeAndStoreFarmerCounters, recomputeAndStoreRoleCounters } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
 import { getDb as getDbCompat } from '../lib/firebaseCompat';
 
@@ -215,6 +215,13 @@ export default function VerifierDashboard() {
           stage: 'rejected',
           updatedAt: serverTimestamp(),
           latestRemark: reason,
+          verifierRemarks: {
+            status: 'rejected',
+            remarks: reason,
+            verifiedBy: officerName || (user?.uid || 'Verifier'),
+            verifiedDate: new Date().toISOString(),
+            documentsVerified: false,
+          },
           history: arrayUnion({
             at: new Date().toISOString(),
             by: user?.uid || 'system',
@@ -231,6 +238,8 @@ export default function VerifierDashboard() {
           type: 'error',
           statusLabel: 'Rejected at Verification',
         });
+        await recomputeAndStoreFarmerCounters(selectedClaim.farmerId);
+        await recomputeAndStoreRoleCounters('verifier');
         toast.success('✅ Status updated: Rejected');
       } else if (actionType === 'forward') {
         const notesEl = document.getElementById('notes') as HTMLTextAreaElement;
@@ -240,6 +249,13 @@ export default function VerifierDashboard() {
           stage: 'field',
           updatedAt: serverTimestamp(),
           latestRemark: notes,
+          verifierRemarks: {
+            status: 'forwarded',
+            remarks: notes,
+            verifiedBy: officerName || (user?.uid || 'Verifier'),
+            verifiedDate: new Date().toISOString(),
+            documentsVerified: true,
+          },
           history: arrayUnion({
             at: new Date().toISOString(),
             by: user?.uid || 'system',
@@ -256,6 +272,9 @@ export default function VerifierDashboard() {
           type: 'info',
           statusLabel: 'Sent for Field Inspection',
         });
+        await recomputeAndStoreFarmerCounters(selectedClaim.farmerId);
+        await recomputeAndStoreRoleCounters('verifier');
+        await recomputeAndStoreRoleCounters('field');
         toast.success('✅ Forwarded to Field Officer');
       }
       setActionType(null);

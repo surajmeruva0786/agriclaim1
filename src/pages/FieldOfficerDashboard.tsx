@@ -17,7 +17,7 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
-import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer } from '../lib/firebaseCompat';
+import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer, recomputeAndStoreFarmerCounters, recomputeAndStoreRoleCounters } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
 
 type FieldClaimStatus = 'pending-inspection' | 'inspected' | 'rejected' | 'forwarded';
@@ -126,36 +126,62 @@ export default function FieldOfficerDashboard() {
     const unsub = db
       .collection('claims')
       .where('stage', '==', 'field')
-      .onSnapshot((snap: any) => {
-        const list: FieldClaim[] = [];
+      .onSnapshot(async (snap: any) => {
+        const listPromises: Promise<FieldClaim>[] = [];
         snap.forEach((d: any) => {
           const data = d.data();
-          list.push({
-            id: d.id,
-            farmerId: data.farmerId,
-            farmerName: data.farmerName || 'Farmer',
-            farmerContact: data.farmerContact || '',
-            farmerEmail: data.farmerEmail || '',
-            farmerAddress: data.farmerAddress || '',
-            farmerAadhaar: data.aadhar || '',
-            farmerBankAccount: data.bank || '',
-            cropType: data.cropType,
-            cropVariety: data.cropVariety || '',
-            areaAffected: data.areaAffected || 0,
-            cause: data.cause,
-            lossDate: data.lossDate,
-            damagePercent: data.damagePercent || 0,
-            submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
-            status: normalizeFieldStatus(data.status),
-            description: data.description || '',
-            documents: (data.documents || []).map((x: any) => ({ name: x.name || 'Link', url: x.url || data.imageLinks, type: x.type || 'link' })),
-            verifierRemarks: data.verifierRemarks,
-            location: data.location || '',
-            area: data.area || '',
-            claimedDamage: data.damagePercent || 0,
-            verifiedDamage: data.verifiedDamagePercent || data.damagePercent || 0,
-          });
+          const farmerId = data.farmerId;
+          const build = async (): Promise<FieldClaim> => {
+            let farmerProfile: any = {};
+            try {
+              if (farmerId) {
+                const udoc = await db.collection('users').doc(farmerId).get();
+                if (udoc.exists) farmerProfile = udoc.data() || {};
+              }
+            } catch (_) {}
+
+            const docs: any[] = [];
+            if (data.imageLinks) {
+              docs.push({ name: 'Crop Damage Images', url: data.imageLinks, type: 'image' });
+            }
+            if (data.documentLinks) {
+              docs.push({ name: 'Supporting Documents', url: data.documentLinks, type: 'pdf' });
+            }
+            if (Array.isArray(data.documents)) {
+              data.documents.forEach((x: any) => {
+                docs.push({ name: x.name || 'Document', url: x.url || '', type: x.type || 'link' });
+              });
+            }
+
+            return {
+              id: d.id,
+              farmerId,
+              farmerName: farmerProfile.name || data.farmerName || 'Farmer',
+              farmerContact: farmerProfile.phone || data.farmerContact || '',
+              farmerEmail: farmerProfile.email || data.farmerEmail || '',
+              farmerAddress: farmerProfile.address || data.farmerAddress || '',
+              farmerAadhaar: farmerProfile.aadhar || data.aadhar || '',
+              farmerBankAccount: farmerProfile.bank || data.bank || '',
+              cropType: data.cropType,
+              cropVariety: data.cropVariety || '',
+              areaAffected: data.areaAffected || 0,
+              cause: data.cause,
+              lossDate: data.lossDate,
+              damagePercent: data.damagePercent || 0,
+              submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
+              status: normalizeFieldStatus(data.status),
+              description: data.description || '',
+              documents: docs,
+              verifierRemarks: data.verifierRemarks,
+              location: data.location || '',
+              area: data.area || '',
+              claimedDamage: data.damagePercent || 0,
+              verifiedDamage: data.verifiedDamagePercent || data.damagePercent || 0,
+            } as FieldClaim;
+          };
+          listPromises.push(build());
         });
+        const list = await Promise.all(listPromises);
         setClaims(list);
       });
     return () => unsub && unsub();
@@ -210,6 +236,9 @@ export default function FieldOfficerDashboard() {
       type: 'success',
       statusLabel: 'Field Inspection Complete',
     });
+    await recomputeAndStoreFarmerCounters(selectedClaim.farmerId);
+    await recomputeAndStoreRoleCounters('field');
+    await recomputeAndStoreRoleCounters('revenue');
     toast.success('Inspection report submitted and forwarded to Revenue Officer');
     setShowInspectionModal(false);
     setSelectedClaim(null);
@@ -240,6 +269,8 @@ export default function FieldOfficerDashboard() {
       type: 'error',
       statusLabel: 'Rejected at Field Inspection',
     });
+    await recomputeAndStoreFarmerCounters(selectedClaim.farmerId);
+    await recomputeAndStoreRoleCounters('field');
     toast.success('Claim rejected');
     setShowInspectionModal(false);
     setSelectedClaim(null);

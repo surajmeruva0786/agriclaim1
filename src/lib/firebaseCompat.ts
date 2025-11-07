@@ -125,4 +125,54 @@ export async function sendClaimStatusNotificationToFarmer(payload: FarmerNotific
 	}
 }
 
+function normalizeStatusForCounters(raw?: string): 'pending' | 'approved' | 'rejected' {
+	const s = (raw || '').toLowerCase();
+	if (s === 'rejected') return 'rejected';
+	if (s === 'approved' || s === 'revenue approved' || s === 'paid') return 'approved';
+	return 'pending';
+}
+
+export async function recomputeAndStoreFarmerCounters(farmerId?: string | null) {
+	if (!farmerId) return;
+	const db = getDb();
+	const snap = await db.collection('claims').where('farmerId', '==', farmerId).get();
+	let total = 0;
+	let pending = 0;
+	let approved = 0;
+	let rejected = 0;
+	snap.forEach((doc: any) => {
+		total += 1;
+		const n = normalizeStatusForCounters(doc.data()?.status);
+		if (n === 'pending') pending += 1;
+		if (n === 'approved') approved += 1;
+		if (n === 'rejected') rejected += 1;
+	});
+	await db.collection('users').doc(farmerId).set({
+		counters: { total, pending, approved, rejected, updatedAt: new Date().toISOString() },
+	}, { merge: true });
+}
+
+type RoleId = 'verifier' | 'field' | 'revenue' | 'treasury';
+
+export async function recomputeAndStoreRoleCounters(roleId: RoleId) {
+	const db = getDb();
+	const snap = await db.collection('claims').where('stage', '==', roleId).get();
+	let total = 0;
+	let pending = 0;
+	let approved = 0;
+	let rejected = 0;
+	let forwarded = 0;
+	snap.forEach((doc: any) => {
+		total += 1;
+		const raw = (doc.data()?.status || '').toLowerCase();
+		if (raw === 'rejected') rejected += 1;
+		else if (raw === 'approved' || raw === 'paid' || raw === 'revenue approved') approved += 1;
+		else if (raw.includes('forward')) forwarded += 1;
+		else pending += 1;
+	});
+	await db.collection('meta').doc('officialCounters').set({
+		[roleId]: { total, pending, approved, rejected, forwarded, updatedAt: new Date().toISOString() },
+	}, { merge: true });
+}
+
 

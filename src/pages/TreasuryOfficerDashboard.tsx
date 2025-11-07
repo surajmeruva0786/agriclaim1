@@ -16,7 +16,7 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
-import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer } from '../lib/firebaseCompat';
+import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer, recomputeAndStoreFarmerCounters, recomputeAndStoreRoleCounters } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function TreasuryOfficerDashboard() {
@@ -209,6 +209,8 @@ export default function TreasuryOfficerDashboard() {
         type: 'success',
         statusLabel: 'Payment Approved',
       });
+      await recomputeAndStoreFarmerCounters(selectedClaim.farmerId);
+      await recomputeAndStoreRoleCounters('treasury');
       toast.success(`Payment of ₹${((selectedClaim as any).compensationAmount || 0).toLocaleString()} approved`);
       setShowApprovalModal(false);
       setSelectedClaim(null);
