@@ -18,9 +18,29 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
+import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer, recomputeAndStoreFarmerCounters, recomputeAndStoreRoleCounters } from '../lib/firebaseCompat';
+import { useAuth } from '../contexts/AuthContext';
+
+type RevenueClaim = Claim & {
+  status: 'pending-review' | 'approved' | 'rejected' | 'forwarded';
+  area?: string;
+  claimedDamage?: number;
+  verifiedDamage?: number;
+  estimatedAmount?: number;
+  fieldOfficerNotes?: string;
+};
+
+const normalizeRevenueStatus = (raw?: string): 'pending-review' | 'approved' | 'rejected' | 'forwarded' => {
+  const s = (raw || '').toLowerCase();
+  if (s === 'rejected') return 'rejected';
+  if (s === 'approved' || s === 'revenue approved' || s === 'paid') return 'approved';
+  if (s.includes('forward')) return 'forwarded';
+  return 'pending-review';
+};
 
 export default function RevenueOfficerDashboard() {
-  const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+  const { user } = useAuth();
+  const [selectedClaim, setSelectedClaim] = useState<RevenueClaim | null>(null);
   const [officerName, setOfficerName] = useState<string>('Revenue Officer');
   const [officerDept, setOfficerDept] = useState<string>('Revenue Assessment');
   const [showProcessModal, setShowProcessModal] = useState(false);
@@ -62,48 +82,67 @@ export default function RevenueOfficerDashboard() {
     },
   ]);
 
-  const [claims, setClaims] = useState<Claim[]>([
-    {
-      id: 'CL2024103',
-      farmerName: 'Mahesh Kumar',
-      farmerContact: '+91 98765 33333',
-      farmerEmail: 'mahesh.kumar@email.com',
-      farmerAddress: 'Village Dewas, Tehsil Dewas, District Dewas, Madhya Pradesh - 455001',
-      farmerAadhaar: '3456 7890 1234',
-      farmerBankAccount: 'ICICI Bank - 60300234567890',
-      cropType: 'Cotton',
-      cropVariety: 'Bt Cotton Hybrid',
-      areaAffected: 6.5,
-      cause: 'Pest Attack',
-      lossDate: '2024-08-05',
-      damagePercent: 45,
-      submittedDate: '2024-08-07',
-      status: 'forwarded',
-      description: 'Bollworm infestation damaged a significant portion of the cotton crop. Despite pesticide application, the pest attack was severe during flowering stage.',
-      documents: [
-        { name: 'Land Records.pdf', url: 'https://drive.google.com/file/land-mahesh', type: 'pdf' },
-        { name: 'Pest Damage Photos.jpg', url: 'https://drive.google.com/file/pest-damage', type: 'image' },
-        { name: 'Pesticide Bills.pdf', url: 'https://drive.google.com/file/pesticide-bills', type: 'pdf' },
-      ],
-      verifierRemarks: {
-        status: 'forwarded',
-        remarks: 'All documents verified. Land records and farmer identity confirmed. Forwarding to field officer for physical inspection.',
-        verifiedBy: 'Dr. Anjali Verma',
-        verifiedDate: '2024-08-08',
-        documentsVerified: true,
-      },
-      fieldOfficerRemarks: {
-        status: 'forwarded',
-        remarks: 'Field inspection completed. Pest damage confirmed on site. Bollworm infestation visible on 40% of the crop. Farmer has taken preventive measures. Forwarding to Revenue Officer for compensation assessment.',
-        inspectedBy: 'Mr. Vikram Singh',
-        inspectionDate: '2024-08-10',
-        fieldVisitCompleted: true,
-        actualDamagePercent: 40,
-        gpsCoordinates: '23.8103° N, 75.8472° E',
-        fieldPhotos: ['field_inspection_1.jpg', 'field_inspection_2.jpg'],
-      },
-    },
-  ]);
+  const [claims, setClaims] = useState<RevenueClaim[]>([]);
+
+  useEffect(() => {
+    const db = getDb();
+    const unsub = db
+      .collection('claims')
+      .where('stage', '==', 'revenue')
+      .onSnapshot(async (snap: any) => {
+        const promises: Promise<RevenueClaim>[] = [];
+        snap.forEach((d: any) => {
+          const data = d.data();
+          const farmerId = data.farmerId;
+          const build = async (): Promise<RevenueClaim> => {
+            let farmerProfile: any = {};
+            try {
+              if (farmerId) {
+                const udoc = await db.collection('users').doc(farmerId).get();
+                if (udoc.exists) farmerProfile = udoc.data() || {};
+              }
+            } catch (_) {}
+            const docs: any[] = [];
+            if (data.imageLinks) docs.push({ name: 'Crop Damage Images', url: data.imageLinks, type: 'image' });
+            if (data.documentLinks) docs.push({ name: 'Supporting Documents', url: data.documentLinks, type: 'pdf' });
+            if (Array.isArray(data.documents)) {
+              data.documents.forEach((x: any) => docs.push({ name: x.name || 'Document', url: x.url || '', type: x.type || 'link' }));
+            }
+            return {
+              id: d.id,
+              farmerId,
+              farmerName: farmerProfile.name || data.farmerName || 'Farmer',
+              farmerContact: farmerProfile.phone || data.farmerContact || '',
+              farmerEmail: farmerProfile.email || data.farmerEmail || '',
+              farmerAddress: farmerProfile.address || data.farmerAddress || '',
+              farmerAadhaar: farmerProfile.aadhar || data.aadhar || '',
+              farmerBankAccount: farmerProfile.bank || data.bank || '',
+              cropType: data.cropType,
+              cropVariety: data.cropVariety || '',
+              areaAffected: data.areaAffected || 0,
+              cause: data.cause,
+              lossDate: data.lossDate,
+              damagePercent: data.damagePercent || 0,
+              submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
+              status: normalizeRevenueStatus(data.status),
+              description: data.description || '',
+              documents: docs,
+              verifierRemarks: data.verifierRemarks,
+              fieldOfficerRemarks: data.fieldOfficerRemarks,
+              area: data.area || '',
+              claimedDamage: data.damagePercent || 0,
+              verifiedDamage: data.verifiedDamagePercent || data.damagePercent || 0,
+              estimatedAmount: data.estimatedAmount || data.estimatedLoss || 0,
+              fieldOfficerNotes: data.latestRemark || '',
+            } as RevenueClaim;
+          };
+          promises.push(build());
+        });
+        const list = await Promise.all(promises);
+        setClaims(list);
+      });
+    return () => unsub && unsub();
+  }, []);
 
   const stats = [
     {
@@ -143,30 +182,82 @@ export default function RevenueOfficerDashboard() {
     setShowRejectModal(true);
   };
 
-  const approveAndForward = () => {
+  const approveAndForward = async () => {
     if (!selectedClaim) return;
-
-    setClaims(claims.map(c =>
-      c.id === selectedClaim.id
-        ? { ...c, status: 'approved', estimatedAmount: compensationAmount[0] }
-        : c
-    ));
-
-    toast.success(`Claim approved with ₹${compensationAmount[0].toLocaleString()} compensation`);
-    setShowProcessModal(false);
-    setSelectedClaim(null);
+    try {
+      const db = getDb();
+      const claimRef = db.collection('claims').doc(selectedClaim.id);
+      const remarksEl = document.getElementById('remarks') as HTMLTextAreaElement | null;
+      const notes = remarksEl?.value?.trim() || 'Approved by Revenue Officer and forwarded to Treasury';
+      await claimRef.update({
+        status: 'Revenue Approved',
+        stage: 'treasury',
+        updatedAt: serverTimestamp(),
+        latestRemark: notes,
+        estimatedAmount: compensationAmount[0],
+        history: arrayUnion({
+          at: new Date().toISOString(),
+          by: user?.uid || 'system',
+          action: 'Approved and Forwarded',
+          role: 'RevenueOfficer',
+          note: notes,
+        }),
+      });
+      await sendClaimStatusNotificationToFarmer({
+        farmerId: selectedClaim.farmerId,
+        claimId: selectedClaim.id,
+        title: 'Claim Approved for Payment',
+        message: `Your claim ${selectedClaim.id} has been approved by the Revenue Officer with compensation ₹${compensationAmount[0].toLocaleString()}. It has been sent to Treasury for payment.`,
+        type: 'success',
+        statusLabel: 'Revenue Approved',
+      });
+      await recomputeAndStoreFarmerCounters(selectedClaim.farmerId);
+      await recomputeAndStoreRoleCounters('revenue');
+      await recomputeAndStoreRoleCounters('treasury');
+      toast.success(`Claim approved with ₹${compensationAmount[0].toLocaleString()} compensation`);
+      setShowProcessModal(false);
+      setSelectedClaim(null);
+    } catch (err: any) {
+      toast.error('Failed to approve & forward: ' + (err?.message || 'Unknown error'));
+    }
   };
 
-  const confirmReject = () => {
+  const confirmReject = async () => {
     if (!selectedClaim) return;
-
-    setClaims(claims.map(c =>
-      c.id === selectedClaim.id ? { ...c, status: 'rejected' } : c
-    ));
-
-    toast.success('Claim rejected');
-    setShowRejectModal(false);
-    setSelectedClaim(null);
+    try {
+      const db = getDb();
+      const claimRef = db.collection('claims').doc(selectedClaim.id);
+      const reasonEl = document.getElementById('reject-reason') as HTMLTextAreaElement | null;
+      const reason = reasonEl?.value?.trim() || 'Rejected by Revenue Officer';
+      await claimRef.update({
+        status: 'Rejected',
+        stage: 'rejected',
+        updatedAt: serverTimestamp(),
+        latestRemark: reason,
+        history: arrayUnion({
+          at: new Date().toISOString(),
+          by: user?.uid || 'system',
+          action: 'Rejected',
+          role: 'RevenueOfficer',
+          note: reason,
+        }),
+      });
+      await sendClaimStatusNotificationToFarmer({
+        farmerId: selectedClaim.farmerId,
+        claimId: selectedClaim.id,
+        title: 'Claim Rejected by Revenue Officer',
+        message: `Your claim ${selectedClaim.id} was rejected at the revenue assessment stage. Reason: ${reason}.`,
+        type: 'error',
+        statusLabel: 'Rejected at Revenue',
+      });
+      await recomputeAndStoreFarmerCounters(selectedClaim.farmerId);
+      await recomputeAndStoreRoleCounters('revenue');
+      toast.success('Claim rejected');
+      setShowRejectModal(false);
+      setSelectedClaim(null);
+    } catch (err: any) {
+      toast.error('Failed to reject: ' + (err?.message || 'Unknown error'));
+    }
   };
 
   const getStatusBadge = (status: Claim['status']) => {
