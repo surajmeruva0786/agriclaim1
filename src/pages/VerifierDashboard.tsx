@@ -18,16 +18,20 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
-import { getDb, serverTimestamp, arrayUnion } from '../lib/firebaseCompat';
+import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
 import { getDb as getDbCompat } from '../lib/firebaseCompat';
 
 type ViewMode = 'grid' | 'list';
 
+type VerifierClaim = Claim & {
+  farmerId?: string;
+};
+
 export default function VerifierDashboard() {
   const { user } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+  const [selectedClaim, setSelectedClaim] = useState<VerifierClaim | null>(null);
   const [actionType, setActionType] = useState<'reject' | 'forward' | 'details' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -74,7 +78,7 @@ export default function VerifierDashboard() {
     },
   ]);
 
-  const [claims, setClaims] = useState<Claim[]>([]);
+  const [claims, setClaims] = useState<VerifierClaim[]>([]);
   const [officerName, setOfficerName] = useState<string>('Document Verifier');
   const [officerDept, setOfficerDept] = useState<string>('Verification Dept.');
 
@@ -85,7 +89,7 @@ export default function VerifierDashboard() {
       .collection('claims')
       .where('stage', '==', 'verifier')
       .onSnapshot(async (snap: any) => {
-        const listPromises: Promise<Claim>[] = [];
+        const listPromises: Promise<VerifierClaim>[] = [];
         snap.forEach((d: any) => {
           const data = d.data();
           const rawStatus = (data.status || 'Submitted').toLowerCase();
@@ -126,6 +130,7 @@ export default function VerifierDashboard() {
             } catch (_) {}
             return {
               id: d.id,
+              farmerId,
               farmerName: farmerProfile.name || data.farmerName || 'Farmer',
               farmerContact: farmerProfile.phone || data.farmerContact || '',
               farmerEmail: farmerProfile.email || data.farmerEmail || '',
@@ -218,6 +223,14 @@ export default function VerifierDashboard() {
             note: reason,
           }),
         });
+        await sendClaimStatusNotificationToFarmer({
+          farmerId: selectedClaim.farmerId,
+          claimId: selectedClaim.id,
+          title: 'Claim Rejected During Verification',
+          message: `Your claim ${selectedClaim.id} was rejected during document verification. Reason: ${reason}.`,
+          type: 'error',
+          statusLabel: 'Rejected at Verification',
+        });
         toast.success('✅ Status updated: Rejected');
       } else if (actionType === 'forward') {
         const notesEl = document.getElementById('notes') as HTMLTextAreaElement;
@@ -234,6 +247,14 @@ export default function VerifierDashboard() {
             role: 'Verifier',
             note: notes,
           }),
+        });
+        await sendClaimStatusNotificationToFarmer({
+          farmerId: selectedClaim.farmerId,
+          claimId: selectedClaim.id,
+          title: 'Claim Moved to Field Inspection',
+          message: `Your claim ${selectedClaim.id} passed document verification and has been sent for field inspection. Notes: ${notes}.`,
+          type: 'info',
+          statusLabel: 'Sent for Field Inspection',
         });
         toast.success('✅ Forwarded to Field Officer');
       }

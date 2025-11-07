@@ -71,4 +71,58 @@ export function arrayUnion(...values: any[]) {
 	return fb.firestore.FieldValue.arrayUnion(...values);
 }
 
+export type FarmerNotificationPayload = {
+	farmerId?: string | null;
+	claimId: string;
+	title: string;
+	message: string;
+	type?: 'success' | 'warning' | 'info' | 'error';
+	statusLabel?: string;
+	linkUrl?: string;
+	linkLabel?: string;
+};
+
+export async function sendClaimStatusNotificationToFarmer(payload: FarmerNotificationPayload) {
+	const { farmerId, claimId, title, message, type = 'info', statusLabel = '', linkUrl, linkLabel } = payload;
+	if (!farmerId) {
+		console.warn('⚠️ Missing farmerId for notification', { claimId, title });
+		return;
+	}
+
+	try {
+		const db = getDb();
+		const timestamp = new Date().toISOString();
+		const base = {
+			claimId,
+			title,
+			message,
+			type,
+			statusLabel,
+			linkUrl: linkUrl || null,
+			linkLabel: linkLabel || null,
+			read: false,
+			timestamp,
+			createdAt: (() => {
+				try {
+					return serverTimestamp();
+				} catch (_) {
+					return timestamp;
+				}
+			})(),
+		};
+
+		const farmerRef = db.collection('users').doc(farmerId).collection('notifications');
+		const docRef = farmerRef.doc();
+		await docRef.set({ ...base, id: docRef.id });
+
+		try {
+			await db.collection('notifications').doc(docRef.id).set({ ...base, farmerId });
+		} catch (_) {
+			// Optional collection – ignore failures
+		}
+	} catch (err) {
+		console.error('❌ Failed to send notification to farmer', err);
+	}
+}
+
 

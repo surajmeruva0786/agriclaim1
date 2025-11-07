@@ -17,12 +17,51 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
-import { getDb, serverTimestamp, arrayUnion } from '../lib/firebaseCompat';
+import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
+
+type FieldClaimStatus = 'pending-inspection' | 'inspected' | 'rejected' | 'forwarded';
+
+type FieldClaim = Claim & {
+  status: FieldClaimStatus;
+  location?: string;
+  area?: string;
+  claimedDamage: number;
+  verifiedDamage?: number;
+  farmerId?: string;
+};
+
+const normalizeFieldStatus = (rawStatus?: string): FieldClaimStatus => {
+  const status = (rawStatus || '').trim().toLowerCase();
+  if (!status) return 'pending-inspection';
+
+  if (['rejected', 'declined'].includes(status)) {
+    return 'rejected';
+  }
+
+  if (
+    [
+      'field verified',
+      'field-verified',
+      'inspected',
+      'inspection complete',
+      'forwarded to revenue',
+      'forwarded-revenue',
+    ].includes(status)
+  ) {
+    return 'inspected';
+  }
+
+  if (['forwarded', 'revenue', 'revenue stage', 'awaiting revenue'].includes(status)) {
+    return 'forwarded';
+  }
+
+  return 'pending-inspection';
+};
 
 export default function FieldOfficerDashboard() {
   const { user } = useAuth();
-  const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+  const [selectedClaim, setSelectedClaim] = useState<FieldClaim | null>(null);
   const [showInspectionModal, setShowInspectionModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [verifiedDamage, setVerifiedDamage] = useState([50]);
@@ -80,8 +119,7 @@ export default function FieldOfficerDashboard() {
       }));
     } catch (_) {}
   }, []);
-
-  const [claims, setClaims] = useState<Claim[]>([]);
+  const [claims, setClaims] = useState<FieldClaim[]>([]);
 
   useEffect(() => {
     const db = getDb();
@@ -89,11 +127,12 @@ export default function FieldOfficerDashboard() {
       .collection('claims')
       .where('stage', '==', 'field')
       .onSnapshot((snap: any) => {
-        const list: any[] = [];
+        const list: FieldClaim[] = [];
         snap.forEach((d: any) => {
           const data = d.data();
           list.push({
             id: d.id,
+            farmerId: data.farmerId,
             farmerName: data.farmerName || 'Farmer',
             farmerContact: data.farmerContact || '',
             farmerEmail: data.farmerEmail || '',
@@ -107,16 +146,17 @@ export default function FieldOfficerDashboard() {
             lossDate: data.lossDate,
             damagePercent: data.damagePercent || 0,
             submittedDate: data.createdAt && data.createdAt.toDate ? data.createdAt.toDate().toISOString().slice(0, 10) : '',
-            status: (data.status || 'Verified').toLowerCase(),
+            status: normalizeFieldStatus(data.status),
             description: data.description || '',
             documents: (data.documents || []).map((x: any) => ({ name: x.name || 'Link', url: x.url || data.imageLinks, type: x.type || 'link' })),
             verifierRemarks: data.verifierRemarks,
             location: data.location || '',
             area: data.area || '',
             claimedDamage: data.damagePercent || 0,
+            verifiedDamage: data.verifiedDamagePercent || data.damagePercent || 0,
           });
         });
-        setClaims(list as any);
+        setClaims(list);
       });
     return () => unsub && unsub();
   }, []);
@@ -124,7 +164,7 @@ export default function FieldOfficerDashboard() {
   const stats = [
     { label: 'Pending Inspection', value: claims.filter(c => c.status === 'pending-inspection').length, icon: MapPin, color: 'from-orange-500 to-yellow-500' },
     { label: 'Inspected Today', value: claims.filter(c => c.status === 'inspected').length, icon: CheckCircle2, color: 'from-green-500 to-emerald-500' },
-    { label: 'Forwarded', value: claims.filter(c => c.status === 'inspected').length, icon: Upload, color: 'from-blue-500 to-cyan-500' },
+    { label: 'Forwarded', value: claims.filter(c => c.status === 'forwarded').length, icon: Upload, color: 'from-blue-500 to-cyan-500' },
     { label: 'Rejected', value: claims.filter(c => c.status === 'rejected').length, icon: XCircle, color: 'from-red-500 to-pink-500' },
   ];
 
@@ -162,6 +202,14 @@ export default function FieldOfficerDashboard() {
         role: 'FieldOfficer',
       }),
     });
+    await sendClaimStatusNotificationToFarmer({
+      farmerId: selectedClaim.farmerId,
+      claimId: selectedClaim.id,
+      title: 'Field Inspection Completed',
+      message: `Your claim ${selectedClaim.id} has been inspected. Verified damage: ${verifiedDamage[0]}%. It is now with the Revenue Officer for assessment.`,
+      type: 'success',
+      statusLabel: 'Field Inspection Complete',
+    });
     toast.success('Inspection report submitted and forwarded to Revenue Officer');
     setShowInspectionModal(false);
     setSelectedClaim(null);
@@ -184,18 +232,28 @@ export default function FieldOfficerDashboard() {
         role: 'FieldOfficer',
       }),
     });
+    await sendClaimStatusNotificationToFarmer({
+      farmerId: selectedClaim.farmerId,
+      claimId: selectedClaim.id,
+      title: 'Claim Rejected After Field Inspection',
+      message: `Your claim ${selectedClaim.id} was rejected by the Field Officer during inspection. Please review the remarks and contact support for assistance.`,
+      type: 'error',
+      statusLabel: 'Rejected at Field Inspection',
+    });
     toast.success('Claim rejected');
     setShowInspectionModal(false);
     setSelectedClaim(null);
   };
 
-  const getStatusBadge = (status: Claim['status']) => {
+  const getStatusBadge = (status: FieldClaimStatus) => {
     const configs = {
       'pending-inspection': { label: 'Pending Inspection', className: 'bg-orange-100 text-orange-700' },
       'inspected': { label: 'Inspection Complete', className: 'bg-green-100 text-green-700' },
       'rejected': { label: 'Rejected', className: 'bg-red-100 text-red-700' },
-    };
-    return <Badge className={configs[status].className}>{configs[status].label}</Badge>;
+      'forwarded': { label: 'Forwarded', className: 'bg-blue-100 text-blue-700' },
+    } as Record<FieldClaimStatus, { label: string; className: string }>;
+    const cfg = configs[status] || configs['pending-inspection'];
+    return <Badge className={cfg.className}>{cfg.label}</Badge>;
   };
 
   return (

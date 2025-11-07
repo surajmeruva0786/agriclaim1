@@ -47,50 +47,7 @@ export default function FarmerDashboard() {
   const [damagePercent, setDamagePercent] = useState([50]);
   const [cause, setCause] = useState<string>('other');
   const [submittedClaimId, setSubmittedClaimId] = useState<string>('');
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: 'notif-1',
-      type: 'success',
-      title: 'Claim Approved',
-      message: 'Your claim CL2024001 for Wheat crop has been approved. Payment will be processed within 3-5 business days.',
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      read: false,
-      actionLabel: 'View Claim Details',
-      actionUrl: '#',
-    },
-    {
-      id: 'notif-2',
-      type: 'info',
-      title: 'Field Inspection Scheduled',
-      message: 'A field officer has been assigned to inspect your claim CL2024002. Expected visit date: Tomorrow, 10:00 AM.',
-      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-      read: false,
-    },
-    {
-      id: 'notif-3',
-      type: 'warning',
-      title: 'Document Verification Required',
-      message: 'Additional documents needed for claim CL2024002. Please upload land ownership certificate.',
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      read: true,
-    },
-    {
-      id: 'notif-4',
-      type: 'error',
-      title: 'Claim Rejected',
-      message: 'Claim CL2024003 has been rejected due to insufficient evidence. You can resubmit with additional documentation.',
-      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      read: true,
-    },
-    {
-      id: 'notif-5',
-      type: 'info',
-      title: 'System Maintenance',
-      message: 'The AgriClaim system will undergo maintenance on Sunday, 2:00 AM - 4:00 AM. Services may be temporarily unavailable.',
-      timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      read: true,
-    },
-  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const [farmerInfo, setFarmerInfo] = useState({
     name: '',
@@ -104,6 +61,50 @@ export default function FarmerDashboard() {
   });
 
   const [claims, setClaims] = useState<Claim[]>([]);
+
+  useEffect(() => {
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
+    const db = getDb();
+    const ref = db
+      .collection('users')
+      .doc(user.uid)
+      .collection('notifications')
+      .orderBy('createdAt', 'desc');
+
+    const unsub = ref.onSnapshot((snap: any) => {
+      const list: Notification[] = [];
+      snap.forEach((doc: any) => {
+        const data = doc.data() || {};
+        let rawTimestamp = data.timestamp;
+        if (!rawTimestamp && data.createdAt && data.createdAt.toDate) {
+          try {
+            rawTimestamp = data.createdAt.toDate().toISOString();
+          } catch (_) {
+            rawTimestamp = new Date().toISOString();
+          }
+        }
+        if (!rawTimestamp) {
+          rawTimestamp = new Date().toISOString();
+        }
+        list.push({
+          id: doc.id,
+          type: (data.type || 'info') as Notification['type'],
+          title: data.title || 'Claim Update',
+          message: data.message || '',
+          timestamp: rawTimestamp,
+          read: !!data.read,
+          actionLabel: data.linkLabel || data.actionLabel,
+          actionUrl: data.linkUrl || data.actionUrl,
+        });
+      });
+      setNotifications(list);
+    });
+
+    return () => unsub && unsub();
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -172,6 +173,38 @@ export default function FarmerDashboard() {
       })
       .catch(() => {});
   }, [user]);
+
+  const handleNotificationsChange = (updated: Notification[]) => {
+    setNotifications(updated);
+    if (!user) return;
+    const db = getDb();
+    const prevMap = new Map(notifications.map(n => [n.id, n]));
+
+    updated.forEach((notif) => {
+      const prev = prevMap.get(notif.id);
+      if (prev && prev.read !== notif.read) {
+        db
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .doc(notif.id)
+          .set({ read: notif.read, readAt: notif.read ? new Date().toISOString() : null }, { merge: true })
+          .catch(() => {});
+      }
+    });
+
+    prevMap.forEach((prev, id) => {
+      if (!updated.some(n => n.id === id)) {
+        db
+          .collection('users')
+          .doc(user.uid)
+          .collection('notifications')
+          .doc(id)
+          .delete()
+          .catch(() => {});
+      }
+    });
+  };
 
   const stats = [
     {
@@ -299,7 +332,7 @@ export default function FarmerDashboard() {
             role: 'Farmer',
           }}
           notificationsList={notifications}
-          onNotificationsChange={setNotifications}
+          onNotificationsChange={handleNotificationsChange}
         />
 
       <div className="pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">

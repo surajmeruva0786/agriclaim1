@@ -16,7 +16,7 @@ import { toast } from 'sonner@2.0.3';
 import PageTransition from '../components/PageTransition';
 import { Notification } from '../components/NotificationDialog';
 import { Claim } from '../types/claim';
-import { getDb, serverTimestamp, arrayUnion } from '../lib/firebaseCompat';
+import { getDb, serverTimestamp, arrayUnion, sendClaimStatusNotificationToFarmer } from '../lib/firebaseCompat';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function TreasuryOfficerDashboard() {
@@ -106,6 +106,7 @@ export default function TreasuryOfficerDashboard() {
             }
             return {
               id: d.id,
+              farmerId: data.farmerId,
               farmerName: farmerProfile.name || data.farmerName || 'Farmer',
               farmerContact: farmerProfile.phone || data.farmerContact || '',
               farmerEmail: farmerProfile.email || data.farmerEmail || '',
@@ -199,6 +200,14 @@ export default function TreasuryOfficerDashboard() {
           action: 'Payment Approved',
           role: 'TreasuryOfficer',
         }),
+      });
+      await sendClaimStatusNotificationToFarmer({
+        farmerId: selectedClaim.farmerId,
+        claimId: selectedClaim.id,
+        title: 'Claim Payment Approved',
+        message: `Your claim ${selectedClaim.id} has been approved for payment. Amount: ₹${((selectedClaim as any).compensationAmount || 0).toLocaleString()}. Funds will be credited shortly.`,
+        type: 'success',
+        statusLabel: 'Payment Approved',
       });
       toast.success(`Payment of ₹${((selectedClaim as any).compensationAmount || 0).toLocaleString()} approved`);
       setShowApprovalModal(false);

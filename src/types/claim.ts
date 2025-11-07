@@ -54,6 +54,7 @@ export type Claim = {
   farmerAddress: string;
   farmerAadhaar: string;
   farmerBankAccount: string;
+  farmerId?: string;
   
   // Crop & Loss Details
   cropType: string;
